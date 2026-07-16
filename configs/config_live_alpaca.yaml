@@ -14,6 +14,11 @@ run_id: live-alpaca-run
 logs_dir: logs
 artifacts_dir: artifacts
 
+api:
+  api_key: null
+  api_secret: null
+
+
 # =============================================================================
 # EXCHANGE CONFIGURATION
 # =============================================================================
@@ -54,7 +59,7 @@ backoff_base_s: 2.0
 max_backoff_s: 60.0
 
 # Execution profile for US equities (market orders at open)
-execution_profile: MKT_OPEN_NEXT_1H
+execution_profile: MKT_OPEN_NEXT_H1
 
 execution_params:
   slippage_bps: 1.0      # Stocks typically have tighter spreads
