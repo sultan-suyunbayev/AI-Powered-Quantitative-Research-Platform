@@ -10,6 +10,9 @@ jobs:
   build:
     name: Build, verify hash, and test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Without this the job runs into the platform limit, which took four hours
+    # to report that the test step had hung. Fail while the log is still useful.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

@@ -147,17 +147,17 @@ def test_binance_ws_degradation_logging(monkeypatch, caplog):
             def __init__(self, msgs):
                 self.msgs = list(msgs)
 
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, exc_type, exc, tb):
-                await client.stop()
-
             def __aiter__(self):
                 return self
 
             async def __anext__(self):
                 if not self.msgs:
+                    # run_forever closes the socket in a finally block rather
+                    # than through `async with`, so there is no __aexit__ to
+                    # hang the stop on. Without this the outer reconnect loop
+                    # sees _stop still False and starts over with a fresh copy
+                    # of the messages, forever.
+                    await client.stop()
                     raise StopAsyncIteration
                 return self.msgs.pop(0)
 
@@ -172,12 +172,21 @@ def test_binance_ws_degradation_logging(monkeypatch, caplog):
             async def close(self):
                 return None
 
-        async def dummy_sleep(_):
-            pass
+        # _connect_once awaits websockets.connect(...), so the stub has to be a
+        # coroutine function -- a plain lambda returns a MockWS, awaiting it
+        # raises TypeError, and run_forever retries the connection forever.
+        async def fake_connect(*_args, **_kwargs):
+            return MockWS(messages)
 
-        monkeypatch.setattr(
-            binance_ws, "websockets", SimpleNamespace(connect=lambda *a, **k: MockWS(messages))
-        )
+        # Keep a handle on the real sleep before patching it out: the stub still
+        # has to yield to the event loop, or _heartbeat and _stale_monitor spin
+        # without ever letting the message iteration run.
+        real_sleep = asyncio.sleep
+
+        async def dummy_sleep(_):
+            await real_sleep(0)
+
+        monkeypatch.setattr(binance_ws, "websockets", SimpleNamespace(connect=fake_connect))
         monkeypatch.setattr(binance_ws.asyncio, "sleep", dummy_sleep)
         caplog.set_level(logging.INFO, logger=binance_ws.__name__)
 
