@@ -337,7 +337,9 @@ class Sandbox:
 
         timeout = timeout or self.config.timeout_seconds
         result = SandboxResult(sandbox_id=self._sandbox_id)
-        start_time = time.time()
+        # perf_counter, not time(): the wall clock can step, and on Windows it
+        # advances in ~16 ms jumps, so a quick call measures as exactly 0.0.
+        start_time = time.perf_counter()
 
         try:
             # Create communication queues
@@ -375,7 +377,7 @@ class Sandbox:
             result.error = str(e)
             result.success = False
 
-        result.duration_seconds = time.time() - start_time
+        result.duration_seconds = time.perf_counter() - start_time
         return result
 
     def _execute_direct(
@@ -387,7 +389,9 @@ class Sandbox:
     ) -> SandboxResult:
         """Execute without isolation."""
         result = SandboxResult(sandbox_id=self._sandbox_id)
-        start_time = time.time()
+        # perf_counter, not time(): the wall clock can step, and on Windows it
+        # advances in ~16 ms jumps, so a quick call measures as exactly 0.0.
+        start_time = time.perf_counter()
 
         try:
             output = func(*args, **(kwargs or {}))
@@ -397,7 +401,7 @@ class Sandbox:
             result.success = False
             result.error = str(e)
 
-        result.duration_seconds = time.time() - start_time
+        result.duration_seconds = time.perf_counter() - start_time
         return result
 
     @staticmethod
@@ -510,8 +514,13 @@ class Sandbox:
             # Here we just set process priority to below-normal as a soft constraint.
             proc = psutil.Process()
             proc.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
-        except (ImportError, AttributeError, psutil.Error):
-            pass  # psutil not available or error setting priority
+        except ImportError:
+            pass  # psutil not installed; nothing to degrade to
+        except Exception:
+            # psutil.Error cannot be named in the except clause: when the import
+            # above is what failed, the name is unbound and evaluating the
+            # clause raises UnboundLocalError instead of degrading gracefully.
+            pass  # error setting priority
 
     def _start_process(self) -> None:
         """Start process-based sandbox."""
