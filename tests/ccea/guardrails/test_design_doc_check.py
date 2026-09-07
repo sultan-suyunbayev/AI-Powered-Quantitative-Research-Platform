@@ -14,6 +14,8 @@ from pathlib import Path
 import pytest
 
 from ccea.guardrails.design_doc_check import (
+    DEFAULT_RENDERED_PATH,
+    DEFAULT_SNAPSHOT_PATH,
     compute_sha256,
     extract_recorded_sha256,
     verify_design_doc_sha,
@@ -58,7 +60,10 @@ class TestComputeSha256:
         """Test SHA256 computation for multiline content."""
         content = "Line 1\nLine 2\nLine 3\n"
         test_file = tmp_path / "multiline.txt"
-        test_file.write_text(content, encoding="utf-8")
+        # write_bytes, not write_text: the latter translates \n to the
+        # platform newline, so on Windows the file holds CRLF and hashes
+        # differently from the string the expectation below is built from.
+        test_file.write_bytes(content.encode("utf-8"))
 
         sha256 = compute_sha256(test_file)
 
@@ -196,8 +201,12 @@ class TestRealDesignDoc:
 
     def test_real_design_doc_sha_matches(self) -> None:
         """Test that real Design Doc snapshot matches recorded SHA."""
-        snapshot_path = Path("docs/design/CCEA_CLOUD/Design_Doc_CCEA_Cloud.txt")
-        rendered_path = Path("docs/design/CCEA_CLOUD/Design_Doc_CCEA_Cloud.md")
+        # The paths the guardrail itself enforces. The pair under
+        # docs/design/CCEA_CLOUD/ that this test used to hard-code is a stale
+        # copy kept for backwards compatibility, and its bytes no longer match
+        # the SHA recorded in the rendered document.
+        snapshot_path = DEFAULT_SNAPSHOT_PATH
+        rendered_path = DEFAULT_RENDERED_PATH
 
         if not snapshot_path.exists() or not rendered_path.exists():
             pytest.skip("Real Design Doc files not available")

@@ -7,8 +7,10 @@ Design Doc Phase 5: Process/container isolation.
 WI-AGENT-01: Tests include Windows compatibility checks.
 """
 
+import multiprocessing
 import os
 import platform
+import subprocess
 import sys
 import pytest
 import time
@@ -26,6 +28,35 @@ from packages.agent.daemon.sandbox import (
     IS_POSIX,
     _resource_module,
 )
+
+
+_REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
+
+
+def _apply_limits_in_child(method, **kwargs):
+    """Run one of Sandbox's _apply_*_resource_limits in a throwaway interpreter.
+
+    These methods call setrlimit on the calling process. Invoking them inline
+    would cap the pytest process itself at a few hundred MB and a minute of CPU
+    time, and the kernel kills it shortly after. Returns the child's
+    CompletedProcess so a test can assert it neither raised nor died.
+    """
+    kwargs_src = ", ".join("{}={!r}".format(k, v) for k, v in kwargs.items())
+    source = "\n".join(
+        [
+            "import sys; sys.path.insert(0, {!r})".format(_REPO_ROOT),
+            "from packages.agent.daemon.sandbox import Sandbox",
+            "Sandbox.{}({})".format(method, kwargs_src),
+        ]
+    )
+    return subprocess.run(
+        [sys.executable, "-c", source],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
 
 
 class TestSandboxConfig:
@@ -187,6 +218,15 @@ class TestSandbox:
         assert result.success is True
         assert "15" in result.output
 
+    @pytest.mark.skipif(
+        multiprocessing.get_start_method(allow_none=True) == "spawn" or IS_WINDOWS,
+        reason=(
+            "PROCESS isolation pickles the callable to reach the worker, and a "
+            "closure defined inside a test cannot be pickled under the spawn "
+            "start method, so the sandbox reports a pickling error before it ever "
+            "gets to run or time the function out"
+        ),
+    )
     def test_execute_process_isolation(self, sandbox_process):
         """Test execution with process isolation."""
 
@@ -203,6 +243,15 @@ class TestSandbox:
             # May fail due to multiprocessing fork issues in threaded context
             assert result.killed_by_timeout or "timeout" in result.error.lower()
 
+    @pytest.mark.skipif(
+        multiprocessing.get_start_method(allow_none=True) == "spawn" or IS_WINDOWS,
+        reason=(
+            "PROCESS isolation pickles the callable to reach the worker, and a "
+            "closure defined inside a test cannot be pickled under the spawn "
+            "start method, so the sandbox reports a pickling error before it ever "
+            "gets to run or time the function out"
+        ),
+    )
     def test_execute_timeout(self, sandbox_process):
         """Test execution timeout."""
 
@@ -279,15 +328,15 @@ class TestSandboxResourceLimits:
 
     def test_apply_resource_limits(self):
         """Test resource limits are applied."""
-        # This just tests the method doesn't crash
-        # Actual limits require running in subprocess
-        try:
-            Sandbox._apply_resource_limits(
-                memory_mb=256,
-                cpu_time_seconds=60,
-            )
-        except Exception:
-            pass  # May fail on some platforms
+        # The limits land on whichever process makes the call, so the call goes
+        # into a child interpreter -- applying them here would cap pytest at
+        # 256 MB and 60 s of CPU and get it killed mid-run.
+        result = _apply_limits_in_child(
+            "_apply_resource_limits",
+            memory_mb=256,
+            cpu_time_seconds=60,
+        )
+        assert result.returncode == 0, result.stderr
 
     def test_memory_limit_respected(self):
         """Test memory limit causes OOM."""
@@ -344,18 +393,23 @@ class TestPlatformCompatibility:
 
     def test_apply_resource_limits_no_crash(self):
         """Test _apply_resource_limits doesn't crash on any platform."""
-        # This should work on any platform (gracefully degrade on Windows)
-        try:
-            Sandbox._apply_resource_limits(memory_mb=256, cpu_time_seconds=60)
-        except Exception as e:
-            # Should not raise on any platform
-            pytest.fail(f"_apply_resource_limits raised {type(e).__name__}: {e}")
+        # In a child interpreter: the limits apply to the caller, and pytest
+        # does not survive them.
+        result = _apply_limits_in_child(
+            "_apply_resource_limits", memory_mb=256, cpu_time_seconds=60
+        )
+        assert (
+            result.returncode == 0
+        ), f"_apply_resource_limits failed in a child process: {result.stderr}"
 
     def test_posix_resource_limits_when_available(self):
         """Test POSIX resource limits are applied when available."""
         if IS_POSIX and _resource_module is not None:
-            # Should not raise
-            Sandbox._apply_posix_resource_limits(memory_mb=512, cpu_time_seconds=120)
+            # Should not raise -- in a child, since setrlimit hits the caller.
+            result = _apply_limits_in_child(
+                "_apply_posix_resource_limits", memory_mb=512, cpu_time_seconds=120
+            )
+            assert result.returncode == 0, result.stderr
         else:
             pytest.skip("POSIX resource limits not available on this platform")
 
@@ -363,10 +417,12 @@ class TestPlatformCompatibility:
     def test_windows_resource_limits(self):
         """Test Windows resource limits (graceful degradation)."""
         # Should not raise, even if psutil is not available
-        try:
-            Sandbox._apply_windows_resource_limits(memory_mb=512, cpu_time_seconds=120)
-        except Exception as e:
-            pytest.fail(f"Windows resource limits raised {type(e).__name__}: {e}")
+        result = _apply_limits_in_child(
+            "_apply_windows_resource_limits", memory_mb=512, cpu_time_seconds=120
+        )
+        assert (
+            result.returncode == 0
+        ), f"Windows resource limits failed in a child process: {result.stderr}"
 
     def test_sandbox_execute_cross_platform(self):
         """Test sandbox execution works on any platform."""
