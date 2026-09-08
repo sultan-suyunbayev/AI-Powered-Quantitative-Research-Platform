@@ -86,9 +86,15 @@ def test_expected_utility_from_quantiles():
     q = pd.DataFrame({"q0": [1.0, 4.0], "q1": [2.0, 5.0], "q2": [3.0, 6.0]})
     eu = expected_utility_from_quantiles(q)
     assert eu.tolist() == pytest.approx([2.0, 5.0])
-    # cvar: нижние квантили
-    cv = expected_utility_from_quantiles(q, cvar_alpha=0.34)  # k=1 → минимум строки
-    assert cv.tolist() == pytest.approx([1.0, 4.0])
+    # CVaR считается кусочно-линейным интегрированием (как в обучающей цели),
+    # а НЕ как наивное mean(нижние-k): для [1,2,3] и α=0.34 хвост чуть заходит
+    # во второй квантиль, поэтому значение немного выше минимума строки.
+    cv = expected_utility_from_quantiles(q, cvar_alpha=0.34)
+    row_min = q.min(axis=1)
+    row_mean = q.mean(axis=1)
+    assert (cv >= row_min).all(), "CVaR не может быть ниже минимума"
+    assert (cv < row_mean).all(), "CVaR хвоста ниже среднего"
+    assert cv.tolist() == pytest.approx(row_min.tolist(), abs=0.05)
 
 
 def test_conformal_confidence_from_widths():

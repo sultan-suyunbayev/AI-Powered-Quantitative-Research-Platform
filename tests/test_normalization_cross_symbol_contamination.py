@@ -171,16 +171,21 @@ def test_fit_statistics_correctness():
     pipe = FeaturePipeline()
     pipe.fit(dfs)
 
-    # With per-symbol shift:
-    # close values (excluding NaN): [10, 20, 1000, 2000]
-    # mean = (10 + 20 + 1000 + 2000) / 4 = 757.5
-    # std = sqrt(sum((x - mean)^2) / n) with ddof=0
+    # With per-symbol shift the surviving close values are [10, 20, 1000, 2000]:
+    # the first row of each symbol becomes NaN, and SYM2's values never leak
+    # into SYM1's window. The statistics are then taken over the winsorized
+    # series, which is what the assertions below reconstruct.
 
     close_stats = pipe.stats.get("close")
     assert close_stats is not None
 
-    expected_mean = (10.0 + 20.0 + 1000.0 + 2000.0) / 4.0
-    values = np.array([10.0, 20.0, 1000.0, 2000.0])
+    # The pipeline winsorizes before it computes the statistics, so the raw
+    # mean is not what it reports; clip to the bounds it recorded.
+    lower, upper = close_stats["winsorize_bounds"]
+    assert lower > 10.0 and upper < 2000.0, "bounds must actually clip the tails"
+
+    values = np.clip(np.array([10.0, 20.0, 1000.0, 2000.0]), lower, upper)
+    expected_mean = float(values.mean())
     expected_std = np.std(values, ddof=0)
 
     assert (
