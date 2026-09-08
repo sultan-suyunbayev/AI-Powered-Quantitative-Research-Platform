@@ -384,10 +384,11 @@ class TestBackwardCompatibility:
         import inspect
         from distributional_ppo import DistributionalPPO
 
-        # Verify the standard (non-twin) critic loss methods exist
+        # The single-critic path goes through the quantile-huber loss; there has
+        # never been a _compute_critic_loss on this class.
         assert hasattr(
-            DistributionalPPO, "_compute_critic_loss"
-        ), "Standard critic loss method must exist for backward compatibility"
+            DistributionalPPO, "_quantile_huber_loss"
+        ), "Standard critic loss must exist for backward compatibility"
 
         # The twin critics method name indicates it's specifically for twin critics
         method = getattr(DistributionalPPO, "_twin_critics_vf_clipping_loss", None)
