@@ -375,8 +375,16 @@ class TestQuantizerImpl:
         assert impl.cfg.quantize_mode == "nearest"
         assert impl.cfg.enforce_percent_price_by_side is False
 
-    def test_from_dict_with_filters_block(self):
+    def test_from_dict_with_filters_block(self, monkeypatch):
         """Test from_dict with nested filters configuration."""
+        # refresh_on_start makes the constructor shell out to the Binance
+        # filters fetcher. This test is about parsing the block into a
+        # config, so the refresh is stubbed rather than performed.
+        monkeypatch.setattr(
+            QuantizerImpl,
+            "_refresh_filters",
+            classmethod(lambda cls, out_path: (False, False, None, "stubbed")),
+        )
         data = {
             "path": "data/filters.json",
             "filters": {
