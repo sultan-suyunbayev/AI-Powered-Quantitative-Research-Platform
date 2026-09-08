@@ -6,7 +6,7 @@
 
 ## Overview
 
-The Cloud Zone provides research, backtesting, monitoring, and lifecycle management capabilities. It is designed with strict security boundaries: Cloud **does not** have access to trading credentials or order execution capabilities.
+The Cloud Zone provides research, backtesting, monitoring, and lifecycle management capabilities. It is built around one hard boundary: the Cloud **never** holds broker credentials or API keys, and **never** generates, transmits or executes a trading order. Those live entirely in the customer-hosted Agent.
 
 ### Design Doc Reference (§4.1)
 

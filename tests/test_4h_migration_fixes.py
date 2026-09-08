@@ -73,14 +73,14 @@ def test_sma_names_in_mediator():
 
 
 def test_timeframe_ms_in_core_config():
-    """Проверяем что timeframe_ms = 14400000 в core_config.py"""
-    with open("core_config.py", "r", encoding="utf-8") as f:
-        content = f.read()
-        assert (
-            "timeframe_ms: int = Field(default=14_400_000)" in content
-        ), "core_config.py должен иметь timeframe_ms = 14_400_000 (4h)"
-        assert "4h timeframe" in content, "core_config.py должен иметь комментарий о 4h timeframe"
-    print("✓ core_config.py: timeframe_ms = 14_400_000 (4h)")
+    """Дефолт timeframe_ms — 4 часа.
+
+    Проверяем сам дефолт, а не текст файла: black переносит объявление поля на
+    несколько строк, и поиск однострочного фрагмента ломается от форматирования.
+    """
+    from core_config import TimingConfig
+
+    assert TimingConfig().timeframe_ms == 14_400_000
 
 
 def test_timeframe_default_in_app():
@@ -115,10 +115,11 @@ def test_lookbacks_default_in_transformers():
         assert (
             "[240, 720, 1200, 1440, 5040, 10080, 12000]" in content
         ), "transformers.py должен иметь правильные дефолтные lookbacks для 4h"
-        # Проверяем окна Yang-Zhang для 4h
-        assert (
-            "[48 * 60, 7 * 24 * 60, 30 * 24 * 60]" in content or "[2880, 10080, 43200]" in content
-        ), "transformers.py должен иметь правильные окна Yang-Zhang для 4h"
+    # Окна Yang-Zhang берём из самого спека: 48h, 7d, 30d в минутах.
+    from transformers import FeatureSpec
+
+    spec = FeatureSpec()
+    assert spec._yang_zhang_windows_minutes == [2880, 10080, 43200]
     print("✓ transformers.py: lookbacks и окна правильные для 4h")
 
 

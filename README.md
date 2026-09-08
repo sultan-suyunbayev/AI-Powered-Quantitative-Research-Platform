@@ -90,6 +90,14 @@ Market data is not shipped here. `prepare_demo_data.py` generates synthetic bars
 pipeline runs immediately; `scripts/download_*.py` fetch real data where you have vendor
 access. The extensions need a C++17 toolchain — see [BUILD_INSTRUCTIONS.md](BUILD_INSTRUCTIONS.md).
 
+Two entry points reach a live venue, and they are not interchangeable.
+`script_live.py` is for development and testing: a single-process signal runner, the
+quickest way to watch a strategy react to a live feed, with no kill switch, no approval
+gate and no audit trail of its own. Production runs go through the Agent daemon,
+`python -m packages.agent.daemon.agentd`, which holds the broker credentials, enforces the
+pre-trade risk controls and writes the audit log; the cloud can ask it to start, stop or
+pause a run, and nothing else.
+
 ## Layout
 
 | Path | What is there |
@@ -124,8 +132,10 @@ the L2 and L3 execution simulators, the CCEA split with its CI guardrails, the A
 vault, risk controls and kill switch, and the desktop shell.
 
 Experimental: cross-sectional portfolio construction, the options and futures paths, and
-live trading beyond paper accounts. Open issues, including two `NameError` paths annotated
-in the source rather than quietly patched, are in [docs/AUDIT_2026-09.md](docs/AUDIT_2026-09.md).
+live trading beyond paper accounts. Open issues — including a gradient-variance statistic
+that measures the wrong axis and is left alone because correcting it would break checkpoint
+compatibility — are in [docs/AUDIT_2026-09.md](docs/AUDIT_2026-09.md), along with the test
+numbers before and after.
 
 A personal project, not commercially developed or supported.
 
