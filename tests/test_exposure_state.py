@@ -39,6 +39,9 @@ def worker_with_state(monkeypatch: pytest.MonkeyPatch):
         guards=None,
         enforce_closed_bars=False,
         state_enabled=True,
+        # Exposure staging and rollback are order-mode machinery; in the default
+        # "bar" mode _stage_exposure_adjustments returns immediately.
+        execution_mode="order",
     )
     worker._last_prices.clear()
     return worker, updates
