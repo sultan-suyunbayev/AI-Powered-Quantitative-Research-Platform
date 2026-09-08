@@ -9,12 +9,18 @@ This test suite performs deep analysis of the fix to ensure:
 5. Mathematical soundness
 """
 
+import pathlib
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
+
+# Read the module by absolute path and in UTF-8: the tests do not control the
+# working directory, and the default encoding is cp1251 on a Russian Windows
+# install, which cannot decode this file.
+_PPO_SOURCE = pathlib.Path(__file__).resolve().parents[1] / "distributional_ppo.py"
 
 
 class DeepTestResults:
@@ -390,7 +396,7 @@ def test_other_locations_in_code():
         print("\n    Checking for other 1e-8 usages in code...")
 
         # Read the main file
-        with open("distributional_ppo.py", "r") as f:
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
             content = f.read()
             lines = content.split("\n")
 
