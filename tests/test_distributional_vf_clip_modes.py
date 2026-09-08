@@ -22,14 +22,24 @@ gym = pytest.importorskip("gymnasium")
 class TestDistributionalVFClipModes:
     """Test suite for distributional VF clipping modes."""
 
-    @pytest.fixture
-    def mock_env(self):
-        """Create a mock environment for testing."""
+    @staticmethod
+    def _make_env():
+        """Create a mock environment for testing.
+
+        A plain helper, not a fixture: several tests build an env inline, and
+        pytest refuses a fixture called directly.
+        """
         env = Mock(spec=gym.Env)
         env.observation_space = gym.spaces.Box(low=-1, high=1, shape=(10,))
-        env.action_space = gym.spaces.Discrete(4)
+        # Score actions require a Box action space; a Discrete one is rejected
+        # by _ensure_score_action_space before the parameter checks run.
+        env.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(1,))
         env.num_envs = 1
         return env
+
+    @pytest.fixture
+    def mock_env(self):
+        return self._make_env()
 
     @pytest.fixture
     def mock_policy(self):
@@ -57,7 +67,7 @@ class TestDistributionalVFClipModes:
                 with patch("distributional_ppo.DistributionalPPO._setup_model"):
                     model = DistributionalPPO(
                         policy="MlpLstmPolicy",
-                        env=self.mock_env(),
+                        env=self._make_env(),
                         distributional_vf_clip_mode=mode,
                         n_steps=16,
                     )
@@ -73,7 +83,7 @@ class TestDistributionalVFClipModes:
             with patch("distributional_ppo.DistributionalPPO._setup_model"):
                 DistributionalPPO(
                     policy="MlpLstmPolicy",
-                    env=self.mock_env(),
+                    env=self._make_env(),
                     distributional_vf_clip_mode="invalid_mode",
                     n_steps=16,
                 )
@@ -88,7 +98,7 @@ class TestDistributionalVFClipModes:
                 with patch("distributional_ppo.DistributionalPPO._setup_model"):
                     model = DistributionalPPO(
                         policy="MlpLstmPolicy",
-                        env=self.mock_env(),
+                        env=self._make_env(),
                         distributional_vf_clip_variance_factor=factor,
                         n_steps=16,
                     )
@@ -102,7 +112,7 @@ class TestDistributionalVFClipModes:
                 with patch("distributional_ppo.DistributionalPPO._setup_model"):
                     DistributionalPPO(
                         policy="MlpLstmPolicy",
-                        env=self.mock_env(),
+                        env=self._make_env(),
                         distributional_vf_clip_variance_factor=invalid_factor,
                         n_steps=16,
                     )
@@ -232,11 +242,11 @@ class TestDistributionalVFClipModes:
         # Constrain to max 2x variance
         variance_factor = 2.0
         max_variance = old_variance * (variance_factor**2)
-        variance_ratio = torch.sqrt(
-            torch.clamp(
-                current_variance / (old_variance + 1e-8), max=max_variance / (old_variance + 1e-8)
-            )
-        )
+        # Scale the spread DOWN to at most variance_factor * old_std, never up:
+        # sqrt(clamp(current/old, max=...)) widens a distribution that is already
+        # narrow enough. This mirrors clamp(max_std / current_std, max=1.0) in
+        # distributional_ppo.
+        variance_ratio = torch.clamp(torch.sqrt(max_variance / (current_variance + 1e-8)), max=1.0)
 
         # Scale quantiles back if variance too large
         quantiles_clipped_improved = clipped_mean + quantiles_centered * variance_ratio

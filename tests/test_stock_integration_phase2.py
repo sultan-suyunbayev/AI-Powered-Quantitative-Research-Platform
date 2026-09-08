@@ -576,10 +576,10 @@ class TestAlpacaTimeframeParsing:
         )
 
         tf = adapter._parse_timeframe("1m")
-        assert tf == TimeFrame.Minute
+        assert tf.value == TimeFrame.Minute.value
 
         tf = adapter._parse_timeframe("1min")
-        assert tf == TimeFrame.Minute
+        assert tf.value == TimeFrame.Minute.value
 
     def test_parse_hour_timeframes(self):
         """Test parsing hour timeframes."""
@@ -594,10 +594,10 @@ class TestAlpacaTimeframeParsing:
         )
 
         tf = adapter._parse_timeframe("1h")
-        assert tf == TimeFrame.Hour
+        assert tf.value == TimeFrame.Hour.value
 
         tf = adapter._parse_timeframe("1hour")
-        assert tf == TimeFrame.Hour
+        assert tf.value == TimeFrame.Hour.value
 
     def test_parse_day_timeframes(self):
         """Test parsing day timeframes."""
@@ -612,10 +612,10 @@ class TestAlpacaTimeframeParsing:
         )
 
         tf = adapter._parse_timeframe("1d")
-        assert tf == TimeFrame.Day
+        assert tf.value == TimeFrame.Day.value
 
         tf = adapter._parse_timeframe("1day")
-        assert tf == TimeFrame.Day
+        assert tf.value == TimeFrame.Day.value
 
     def test_parse_invalid_timeframe(self):
         """Test parsing invalid timeframe."""
