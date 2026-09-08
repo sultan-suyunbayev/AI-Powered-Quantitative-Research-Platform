@@ -18,6 +18,7 @@ import gc
 import gzip
 import json
 import os
+import pathlib
 import pickle
 import tempfile
 import threading
@@ -33,6 +34,7 @@ pytest.importorskip("sortedcontainers")
 
 # Import Phase 0.5 components
 from lob.lazy_multi_series import (
+    _HMAC_SIGNATURE_LENGTH,
     EvictionPolicy,
     LazyMultiSeriesLOBManager,
     LOBMetadata,
@@ -1314,10 +1316,12 @@ class TestDiskPersistence:
         # Compressed file should exist
         assert os.path.exists(compressed_file)
 
-        # Should be valid gzip (binary pickle content)
-        with gzip.open(compressed_file, "rb") as f:
-            content = f.read()
-            assert len(content) > 0
+        # File format is [gzip data][32-byte HMAC], so the trailer has to come
+        # off before decompressing -- gzip.open() over the whole file trips on it.
+        raw = pathlib.Path(compressed_file).read_bytes()
+        assert raw[:2] == bytes((0x1F, 0x8B)), "payload should be gzip"
+        content = gzip.decompress(raw[:-_HMAC_SIGNATURE_LENGTH])
+        assert len(content) > 0
 
     def test_restore_from_disk(self, temp_dir):
         """Test restoring LOB state from disk."""
