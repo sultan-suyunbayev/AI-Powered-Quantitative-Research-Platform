@@ -182,7 +182,8 @@ class TestProductionCodeSecurity:
         EXPLOIT_DATA = None
 
         # This should load successfully with weights_only=True
-        new_state, new_hyperparams = scheduler.exploit_and_explore(population[1])
+        # exploit_and_explore returns (state, hyperparams, source_id)
+        new_state, new_hyperparams, _source = scheduler.exploit_and_explore(population[1])
 
         # Verify safe checkpoint loaded
         assert new_state is not None, "Expected checkpoint to be loaded during exploitation"
