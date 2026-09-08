@@ -1,0 +1,26 @@
+{
+  "_comment": "Regression benchmark for slippage.model_curve: participation levels and the impact in bps they produce at k=0.8, default_spread_bps=2.0, min_half_spread_bps=0.1. Regenerate deliberately, not to make a test pass.",
+  "config": {
+    "k": 0.8,
+    "default_spread_bps": 2.0,
+    "min_half_spread_bps": 0.1
+  },
+  "participation": [
+    0.0,
+    0.01,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0
+  ],
+  "impact_bps": [
+    1.0000008,
+    1.08,
+    1.1788854381999831,
+    1.2529822128134704,
+    1.4,
+    1.5656854249492382,
+    1.8
+  ]
+}

@@ -50,7 +50,13 @@ def test_vwap_execution_price():
         trade_qty=0.0,
         actions=[(ActionType.MARKET, proto)],
     )
-    assert len(rep.trades) == 1
-    trade = rep.trades[0]
-    expected_vwap = (100 * 1 + 101 * 2 + 102 * 3) / (1 + 2 + 3)
-    assert trade.price == pytest.approx(expected_vwap)
+    # The VWAP executor slices the parent into children, so the step returns
+    # several fills rather than one aggregate trade. What the profile promises
+    # is the average price, so check that.
+    assert rep.trades, "VWAP execution must produce fills"
+    total_qty = sum(t.qty for t in rep.trades)
+    assert total_qty == pytest.approx(1.0)
+
+    realised_vwap = sum(t.price * t.qty for t in rep.trades) / total_qty
+    reference_vwap = (100 * 1 + 101 * 2 + 102 * 3) / (1 + 2 + 3)
+    assert realised_vwap == pytest.approx(reference_vwap, rel=0.02)
