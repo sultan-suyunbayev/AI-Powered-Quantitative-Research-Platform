@@ -206,8 +206,10 @@ def test_projection_gradient_same_bounds_specific():
         target_atoms=target_atoms,
     )
 
-    # Loss: just sum all projected probabilities
-    loss = projected.sum()
+    # A plain sum over a probability vector is constant (each row sums to 1), so
+    # its gradient is zero by construction. Weight by the target atoms: that is
+    # the expected value the projection is there to preserve.
+    loss = (projected * target_atoms).sum()
 
     # Backward
     loss.backward()
