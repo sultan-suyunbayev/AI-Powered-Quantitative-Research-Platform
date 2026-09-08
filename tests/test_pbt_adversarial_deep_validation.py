@@ -798,7 +798,7 @@ class TestDefaultsComprehensive:
         config_path = "configs/config_pbt_adversarial.yaml"
 
         if os.path.exists(config_path):
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             assert data["pbt"]["enabled"] is True, "PBT must be enabled in YAML"

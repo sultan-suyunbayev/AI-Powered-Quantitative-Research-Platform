@@ -78,7 +78,7 @@ class TestDocumentationStructure:
         if not ccea_path.exists():
             pytest.skip("CCEA_OVERVIEW.md not found")
 
-        content = ccea_path.read_text()
+        content = ccea_path.read_text(encoding="utf-8")
         required_sections = [
             "Architecture",
             "Security",
@@ -136,7 +136,7 @@ class TestLegalDocuments:
         if not tos_path.exists():
             pytest.skip("ToS not found")
 
-        content = tos_path.read_text()
+        content = tos_path.read_text(encoding="utf-8")
         assert "CCEA" in content, "Terms of Service must mention CCEA architecture"
 
     def test_tos_has_not_investment_advice(self):
@@ -145,7 +145,7 @@ class TestLegalDocuments:
         if not tos_path.exists():
             pytest.skip("ToS not found")
 
-        content = tos_path.read_text().lower()
+        content = tos_path.read_text(encoding="utf-8").lower()
         assert (
             "not" in content and "investment advice" in content
         ), "Terms of Service must contain 'not investment advice' disclaimer"
@@ -156,7 +156,7 @@ class TestLegalDocuments:
         if not privacy_path.exists():
             pytest.skip("Privacy Policy not found")
 
-        content = privacy_path.read_text()
+        content = privacy_path.read_text(encoding="utf-8")
         assert "CCEA" in content, "Privacy Policy must mention CCEA architecture"
         assert (
             "Cloud" in content and "Agent" in content
@@ -168,7 +168,7 @@ class TestLegalDocuments:
         if not privacy_path.exists():
             pytest.skip("Privacy Policy not found")
 
-        content = privacy_path.read_text().lower()
+        content = privacy_path.read_text(encoding="utf-8").lower()
         # Check for phrases like "never store" credentials, "local only", etc.
         never_store = "never" in content and ("store" in content or "stored" in content)
         credentials_local = "local" in content and ("credential" in content or "api key" in content)
@@ -191,7 +191,7 @@ class TestCCEASecurityBoundaries:
         if not cloud_readme.exists():
             pytest.skip("Cloud README not found")
 
-        content = cloud_readme.read_text().lower()
+        content = cloud_readme.read_text(encoding="utf-8").lower()
         assert (
             "never" in content and "order" in content
         ), "Cloud docs must state Cloud NEVER executes orders"
@@ -202,7 +202,7 @@ class TestCCEASecurityBoundaries:
         if not cloud_readme.exists():
             pytest.skip("Cloud README not found")
 
-        content = cloud_readme.read_text().lower()
+        content = cloud_readme.read_text(encoding="utf-8").lower()
         assert "never" in content and (
             "credential" in content or "api key" in content
         ), "Cloud docs must state Cloud NEVER stores credentials"
@@ -213,7 +213,7 @@ class TestCCEASecurityBoundaries:
         if not vault_doc.exists():
             pytest.skip("LOCAL_VAULT.md not found")
 
-        content = vault_doc.read_text().lower()
+        content = vault_doc.read_text(encoding="utf-8").lower()
         assert "encrypt" in content, "Agent LOCAL_VAULT.md must mention encryption"
         assert "local" in content, "Agent LOCAL_VAULT.md must emphasize local storage"
 
@@ -223,7 +223,7 @@ class TestCCEASecurityBoundaries:
         if not schema_readme.exists():
             pytest.skip("Schema README not found")
 
-        content = schema_readme.read_text().lower()
+        content = schema_readme.read_text(encoding="utf-8").lower()
         prohibited_fields = ["side", "quantity", "price", "order_type"]
         found_prohibitions = sum(1 for f in prohibited_fields if f in content)
 
@@ -275,7 +275,7 @@ class TestProhibitedPayloadFields:
 
         violations = []
         for file_path in cloud_code_files:
-            content = file_path.read_text()
+            content = file_path.read_text(encoding="utf-8")
             for pattern in prohibited_patterns:
                 if re.search(pattern, content, re.IGNORECASE):
                     violations.append(f"{file_path}: matches pattern '{pattern}'")
@@ -297,7 +297,7 @@ class TestDocumentationCrossReferences:
         if not ccea_path.exists():
             pytest.skip("CCEA_OVERVIEW.md not found")
 
-        content = ccea_path.read_text()
+        content = ccea_path.read_text(encoding="utf-8")
         assert (
             "cloud/" in content.lower() or "docs/cloud" in content.lower()
         ), "CCEA_OVERVIEW.md should reference cloud documentation"
@@ -308,7 +308,7 @@ class TestDocumentationCrossReferences:
         if not ccea_path.exists():
             pytest.skip("CCEA_OVERVIEW.md not found")
 
-        content = ccea_path.read_text()
+        content = ccea_path.read_text(encoding="utf-8")
         assert (
             "agent/" in content.lower() or "docs/agent" in content.lower()
         ), "CCEA_OVERVIEW.md should reference agent documentation"
@@ -319,7 +319,7 @@ class TestDocumentationCrossReferences:
         if not runbook_index.exists():
             pytest.skip("Runbook index not found")
 
-        content = runbook_index.read_text()
+        content = runbook_index.read_text(encoding="utf-8")
         required_runbooks = ["KILL_SWITCH", "RECOVERY", "AGENT_REVOCATION"]
 
         for runbook in required_runbooks:
@@ -340,7 +340,7 @@ class TestVersionConsistency:
         if not tos_path.exists():
             pytest.skip("ToS not found")
 
-        content = tos_path.read_text()
+        content = tos_path.read_text(encoding="utf-8")
         # Look for version pattern
         version_match = re.search(r"Version[:\s]*(\d+\.\d+\.\d+)", content, re.IGNORECASE)
 
@@ -355,7 +355,7 @@ class TestVersionConsistency:
         if not privacy_path.exists():
             pytest.skip("Privacy Policy not found")
 
-        content = privacy_path.read_text()
+        content = privacy_path.read_text(encoding="utf-8")
         version_match = re.search(r"Version[:\s]*(\d+\.\d+\.\d+)", content, re.IGNORECASE)
 
         if version_match:
@@ -383,7 +383,7 @@ class TestUIGuardrails:
         if not guardrails_path.exists():
             pytest.skip("Onboarding guardrails not found")
 
-        content = guardrails_path.read_text().lower()
+        content = guardrails_path.read_text(encoding="utf-8").lower()
         assert "disclaimer" in content, "Onboarding guardrails must include disclaimers"
 
     def test_onboarding_guardrails_has_risk_warning(self):
@@ -392,7 +392,7 @@ class TestUIGuardrails:
         if not guardrails_path.exists():
             pytest.skip("Onboarding guardrails not found")
 
-        content = guardrails_path.read_text().lower()
+        content = guardrails_path.read_text(encoding="utf-8").lower()
         assert (
             "risk" in content and "warning" in content
         ), "Onboarding guardrails must include risk warnings"
@@ -403,7 +403,7 @@ class TestUIGuardrails:
         if not guardrails_path.exists():
             pytest.skip("Onboarding guardrails not found")
 
-        content = guardrails_path.read_text().lower()
+        content = guardrails_path.read_text(encoding="utf-8").lower()
         assert "acknowledg" in content, "Onboarding guardrails must define acknowledgment flows"
 
     def test_onboarding_guardrails_has_ai_disclosure(self):
@@ -412,7 +412,7 @@ class TestUIGuardrails:
         if not guardrails_path.exists():
             pytest.skip("Onboarding guardrails not found")
 
-        content = guardrails_path.read_text().lower()
+        content = guardrails_path.read_text(encoding="utf-8").lower()
         assert "ai" in content and (
             "generated" in content or "system" in content
         ), "Onboarding guardrails must include AI system disclosure"
@@ -432,7 +432,7 @@ class TestArchitectureDocumentation:
         if not readme_path.exists():
             pytest.skip("README.md not found")
 
-        content = readme_path.read_text()
+        content = readme_path.read_text(encoding="utf-8")
         assert "CCEA" in content, "README.md must mention CCEA architecture"
 
     def test_architecture_md_exists(self):
@@ -446,7 +446,7 @@ class TestArchitectureDocumentation:
         if not arch_path.exists():
             pytest.skip("ARCHITECTURE.md not found")
 
-        content = arch_path.read_text().lower()
+        content = arch_path.read_text(encoding="utf-8").lower()
         assert (
             "cloud" in content and "agent" in content
         ), "ARCHITECTURE.md must describe Cloud/Agent separation"
@@ -475,7 +475,7 @@ class TestDocumentationIntegrity:
             if not doc_path.exists():
                 continue
 
-            content = doc_path.read_text()
+            content = doc_path.read_text(encoding="utf-8")
             for match in link_pattern.finditer(content):
                 link_text, link_url = match.groups()
 
@@ -504,7 +504,7 @@ class TestDocumentationIntegrity:
 
         missing_version = []
         for doc in legal_dir.glob("*.md"):
-            content = doc.read_text()
+            content = doc.read_text(encoding="utf-8")
             if not re.search(r"version", content, re.IGNORECASE):
                 missing_version.append(doc.name)
 
@@ -525,7 +525,7 @@ class TestTelemetryRedactionDocumentation:
         if not privacy_path.exists():
             pytest.skip("Privacy Policy not found")
 
-        content = privacy_path.read_text().lower()
+        content = privacy_path.read_text(encoding="utf-8").lower()
         assert (
             "redact" in content or "telemetry" in content
         ), "Privacy Policy must mention telemetry redaction"
@@ -541,7 +541,7 @@ class TestTelemetryRedactionDocumentation:
         found_redaction = False
         for doc_path in possible_files:
             if doc_path.exists():
-                content = doc_path.read_text().lower()
+                content = doc_path.read_text(encoding="utf-8").lower()
                 if "redact" in content:
                     found_redaction = True
                     break
@@ -568,7 +568,7 @@ class TestKillSwitchDocumentation:
         if not killswitch_path.exists():
             pytest.skip("Kill switch runbook not found")
 
-        content = killswitch_path.read_text().lower()
+        content = killswitch_path.read_text(encoding="utf-8").lower()
         assert "trigger" in content, "Kill switch runbook must include trigger instructions"
 
     def test_kill_switch_has_recovery_steps(self):
@@ -577,7 +577,7 @@ class TestKillSwitchDocumentation:
         if not killswitch_path.exists():
             pytest.skip("Kill switch runbook not found")
 
-        content = killswitch_path.read_text().lower()
+        content = killswitch_path.read_text(encoding="utf-8").lower()
         assert (
             "recover" in content or "reset" in content
         ), "Kill switch runbook must include recovery steps"

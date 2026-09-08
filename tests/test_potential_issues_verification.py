@@ -153,7 +153,7 @@ class TestDoubleTradingCostPenalty:
         # Check that documentation exists
         assert os.path.exists(reward_pyx_path), "reward.pyx not found"
 
-        with open(reward_pyx_path, "r") as f:
+        with open(reward_pyx_path, "r", encoding="utf-8") as f:
             content = f.read()
 
         # Verify documentation is present

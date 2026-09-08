@@ -227,7 +227,7 @@ class TestProtocolSchema:
         if not schema_path.exists():
             pytest.skip("Protocol schema not found")
 
-        with open(schema_path) as f:
+        with open(schema_path, encoding="utf-8") as f:
             return json.load(f)
 
     def test_schema_has_prohibited_fields_definition(self, schema):
@@ -595,7 +595,7 @@ class TestTelemetryRedaction:
         if not schema_path.exists():
             pytest.skip("Protocol schema not found")
 
-        with open(schema_path) as f:
+        with open(schema_path, encoding="utf-8") as f:
             schema = json.load(f)
 
         schema_str = json.dumps(schema)
@@ -630,7 +630,7 @@ class TestCIGuardrailsIntegration:
         if not import_check_path.exists():
             pytest.skip("import_check.py not found")
 
-        content = import_check_path.read_text()
+        content = import_check_path.read_text(encoding="utf-8")
         assert "PROHIBITED_IN_CLOUD" in content, "Should define PROHIBITED_IN_CLOUD"
         assert "order_execution" in content, "Should list order_execution as prohibited"
 
@@ -641,7 +641,7 @@ class TestCIGuardrailsIntegration:
         if not intent_path.exists():
             pytest.skip("intent_prohibition.py not found")
 
-        content = intent_path.read_text()
+        content = intent_path.read_text(encoding="utf-8")
         assert "PROHIBITED_INTENT_FIELDS" in content or "prohibited" in content.lower()
         # Verify common prohibited fields are mentioned
         assert "side" in content, "Should prohibit 'side' field"
@@ -668,7 +668,7 @@ class TestLegalDocumentation:
         if not tos_path.exists():
             pytest.skip("ToS not found")
 
-        content = tos_path.read_text()
+        content = tos_path.read_text(encoding="utf-8")
         assert "CCEA" in content, "ToS should mention CCEA"
         assert "Cloud" in content and "Agent" in content
 
@@ -678,7 +678,7 @@ class TestLegalDocumentation:
         if not tos_path.exists():
             pytest.skip("ToS not found")
 
-        content = tos_path.read_text()
+        content = tos_path.read_text(encoding="utf-8")
         assert "NOT" in content and "investment" in content.lower()
 
     def test_privacy_policy_exists(self):

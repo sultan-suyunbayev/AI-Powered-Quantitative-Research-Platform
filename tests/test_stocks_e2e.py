@@ -1048,7 +1048,7 @@ def test_signal_only_config():
         results.add_skip("Signal-Only Training Config", "Config file not found")
         return
 
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     assert "mode" in config or "env" in config or config is not None
@@ -1393,7 +1393,7 @@ def test_backtest_config_loading():
     config_found = False
     for path in config_paths:
         if path.exists():
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 config = yaml.safe_load(f)
             assert config is not None
             config_found = True

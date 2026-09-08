@@ -253,7 +253,7 @@ class TestThreatModelDocumentation:
     def test_threat_model_covers_required_sections(self):
         """Verify threat model covers required sections."""
         threat_model_path = Path("docs/security/THREAT_MODEL_MODEL_LOADING.md")
-        content = threat_model_path.read_text()
+        content = threat_model_path.read_text(encoding="utf-8")
 
         required_sections = [
             "Threat Identification",

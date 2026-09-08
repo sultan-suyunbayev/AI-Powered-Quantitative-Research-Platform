@@ -50,7 +50,7 @@ class TestPhase0DocumentExistence:
 
     def test_gdpr_scope_memo_not_empty(self):
         """GDPR_RISK_SCOPE_MEMO.md must have substantial content."""
-        content = GDPR_SCOPE_MEMO_PATH.read_text()
+        content = GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
         # Should be at least 10KB (comprehensive document)
         assert len(content) > 10000, (
             f"GDPR_RISK_SCOPE_MEMO.md is too short ({len(content)} bytes). "
@@ -64,7 +64,7 @@ class TestGDPRScopeMemoStructure:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_has_executive_summary(self, memo_content: str):
         """Document must have an executive summary section."""
@@ -122,7 +122,7 @@ class TestRoPATableCompleteness:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_ropa_has_system_column(self, memo_content: str):
         """RoPA table must have 'System' column."""
@@ -186,7 +186,7 @@ class TestTelemetryLevelsDocumentation:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_aggregated_level_documented(self, memo_content: str):
         """AGGREGATED telemetry level must be documented."""
@@ -261,7 +261,7 @@ class TestEUDataResidency:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_eu_only_residency_stated(self, memo_content: str):
         """EU-only data residency must be explicitly stated."""
@@ -320,7 +320,7 @@ class TestDataStoreCompleteness:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def _extract_ropa_rows(self, content: str) -> List[str]:
         """Extract RoPA table rows from content."""
@@ -398,7 +398,7 @@ class TestControllerProcessorRoles:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_has_role_determination_framework(self, memo_content: str):
         """Document must explain how roles are determined."""
@@ -457,7 +457,7 @@ class TestArchitecturalInvariants:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_cloud_never_receives_secrets(self, memo_content: str):
         """Document must state Cloud never receives secrets."""
@@ -506,7 +506,7 @@ class TestCommandProtocolDocumentation:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_allowed_commands_listed(self, memo_content: str):
         """Allowed command types must be listed."""
@@ -536,7 +536,7 @@ class TestDSARBoundaries:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_dsar_scope_documented(self, memo_content: str):
         """DSAR scope must be documented."""
@@ -568,7 +568,7 @@ class TestGDPRArticleReferences:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_references_art_5_principles(self, memo_content: str):
         """Article 5 (Data Protection Principles) must be referenced."""
@@ -621,7 +621,7 @@ class TestPhase0ChecklistCompleteness:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_dod_checklist_exists(self, memo_content: str):
         """Compliance checklist section must exist."""
@@ -657,7 +657,7 @@ class TestDataCategoryDefinitions:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_has_data_category_appendix(self, memo_content: str):
         """Document should have a data category definitions appendix."""
@@ -699,7 +699,7 @@ class TestRiskAssessment:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_has_risk_assessment_section(self, memo_content: str):
         """Document should include privacy risk assessment."""
@@ -730,7 +730,7 @@ class TestIntegrationWithDesignDoc:
     @pytest.fixture
     def memo_content(self) -> str:
         """Load the memo content."""
-        return GDPR_SCOPE_MEMO_PATH.read_text()
+        return GDPR_SCOPE_MEMO_PATH.read_text(encoding="utf-8")
 
     def test_references_design_doc(self, memo_content: str):
         """Document must reference the CCEA Design Doc."""
@@ -764,7 +764,7 @@ class Phase0Validator:
 
     def __init__(self, memo_path: Path = GDPR_SCOPE_MEMO_PATH):
         self.memo_path = memo_path
-        self.content = memo_path.read_text() if memo_path.exists() else ""
+        self.content = memo_path.read_text(encoding="utf-8") if memo_path.exists() else ""
 
     def validate_all(self) -> Dict[str, Any]:
         """Run all validations and return results."""

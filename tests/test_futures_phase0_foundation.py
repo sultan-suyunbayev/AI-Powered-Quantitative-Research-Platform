@@ -375,7 +375,7 @@ class TestContractSpecificationsParsing:
         if not specs_path.exists():
             pytest.skip("Contract specs file not found")
 
-        with open(specs_path, "r") as f:
+        with open(specs_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         assert data is not None
@@ -388,7 +388,7 @@ class TestContractSpecificationsParsing:
         if not specs_path.exists():
             pytest.skip("Contract specs file not found")
 
-        with open(specs_path, "r") as f:
+        with open(specs_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         assert "equity_index" in data or "contracts" in data
@@ -400,7 +400,7 @@ class TestContractSpecificationsParsing:
         if not specs_path.exists():
             pytest.skip("Contract specs file not found")
 
-        with open(specs_path, "r") as f:
+        with open(specs_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         # Check for commodity contracts

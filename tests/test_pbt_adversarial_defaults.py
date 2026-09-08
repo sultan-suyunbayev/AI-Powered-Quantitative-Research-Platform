@@ -86,7 +86,7 @@ class TestYAMLConfigDefaults:
         if not os.path.exists(config_path):
             pytest.skip(f"{config_path} not found")
 
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         assert "pbt" in data, "YAML must have 'pbt' section"
@@ -98,7 +98,7 @@ class TestYAMLConfigDefaults:
         if not os.path.exists(config_path):
             pytest.skip(f"{config_path} not found")
 
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         assert "adversarial" in data, "YAML must have 'adversarial' section"

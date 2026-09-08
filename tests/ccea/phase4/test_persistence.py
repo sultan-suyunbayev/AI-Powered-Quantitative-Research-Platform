@@ -158,7 +158,7 @@ class TestSavePending:
         assert pending_path.exists()
 
         # Verify content
-        with open(pending_path) as f:
+        with open(pending_path, encoding="utf-8") as f:
             saved_data = json.load(f)
         assert saved_data["command_type"] == "START_RUN"
 

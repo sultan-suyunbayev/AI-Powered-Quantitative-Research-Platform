@@ -91,12 +91,12 @@ def test_main_sensitivity(tmp_path, monkeypatch):
     sim.main()
 
     degr_path = trades_path.with_name("sim_reality_check_degradation.json")
-    ranking = json.loads(degr_path.read_text())
+    ranking = json.loads(degr_path.read_text(encoding="utf-8"))
     scenarios = [r["scenario"] for r in ranking]
     assert scenarios == ["High", "Med", "Low"]
     kpis = [r["kpi"] for r in ranking]
     assert kpis == sorted(kpis, reverse=True)
 
     summary_path = trades_path.with_name("sim_reality_check.json")
-    summary = json.loads(summary_path.read_text())
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert "scenario.High" in summary["flags"]

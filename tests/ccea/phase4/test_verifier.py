@@ -175,7 +175,7 @@ class TestArtifactVerifier:
         signature = signer.sign_file(artifact_path)
 
         # Update manifest with signature and sbom_ref (for SBOM enforcement)
-        manifest = json.loads(manifest_path.read_text())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["signature"] = signature.to_dict()
         manifest["sbom_ref"] = "sha256:dummy_sbom_ref"  # Add SBOM reference
         manifest_path.write_text(json.dumps(manifest))

@@ -57,7 +57,7 @@ class TestSignalCSVWriterInit:
         writer = SignalCSVWriter(str(path))
 
         assert path.exists()
-        content = path.read_text()
+        content = path.read_text(encoding="utf-8")
         assert "ts_ms" in content
         assert "symbol" in content
         writer.close()

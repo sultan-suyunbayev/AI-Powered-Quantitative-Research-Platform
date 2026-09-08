@@ -42,7 +42,7 @@ def check_config_files():
 
     for config_file in config_files:
         try:
-            with open(config_file, "r") as f:
+            with open(config_file, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
 
             # Check for value_clip_limit in various locations

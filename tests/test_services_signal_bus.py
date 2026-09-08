@@ -159,7 +159,7 @@ class TestStateManagement:
 
         signal_bus.flush_state()
         assert state_file.exists()
-        data = json.loads(state_file.read_text())
+        data = json.loads(state_file.read_text(encoding="utf-8"))
         assert data["test"] == 12345
 
     def test_flush_state_atomic_write(self, tmp_path):
@@ -264,7 +264,7 @@ class TestLogDrop:
 
         signal_bus.log_drop(envelope, "expired")
         assert csv_file.exists()
-        content = csv_file.read_text()
+        content = csv_file.read_text(encoding="utf-8")
         assert "BTCUSDT" in content
         assert "expired" in content
 
@@ -505,7 +505,7 @@ class TestPublishSignal:
         )
 
         assert csv_file.exists()
-        content = csv_file.read_text()
+        content = csv_file.read_text(encoding="utf-8")
         assert "BTCUSDT" in content
 
 

@@ -320,7 +320,7 @@ class TestDocumentationAccuracy:
 
     def test_documentation_claims_default_true(self):
         """Verify docs say default is True."""
-        with open("/home/user/ai-quant-platform/docs/twin_critics.md", "r") as f:
+        with open("/home/user/ai-quant-platform/docs/twin_critics.md", "r", encoding="utf-8") as f:
             docs = f.read()
 
         # Check for key phrases

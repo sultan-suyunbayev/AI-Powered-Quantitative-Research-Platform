@@ -37,7 +37,7 @@ def test_tick_persists_state(tmp_path):
     ops_kill_switch.init(cfg)
     ops_kill_switch.record_error("rest")
     ops_kill_switch.tick()
-    data = json.loads(state.read_text())
+    data = json.loads(state.read_text(encoding="utf-8"))
     assert data["counters"]["rest"] == 1
     ops_kill_switch.manual_reset()
 
@@ -48,9 +48,9 @@ def test_reset_duplicates(tmp_path):
     cfg = {"flag_path": str(flag), "state_path": str(state)}
     ops_kill_switch.init(cfg)
     ops_kill_switch.record_duplicate()
-    assert json.loads(state.read_text())["counters"]["duplicates"] == 1
+    assert json.loads(state.read_text(encoding="utf-8"))["counters"]["duplicates"] == 1
     ops_kill_switch.reset_duplicates()
-    assert json.loads(state.read_text())["counters"]["duplicates"] == 0
+    assert json.loads(state.read_text(encoding="utf-8"))["counters"]["duplicates"] == 0
 
 
 def test_alert_command_runs_once(tmp_path):
@@ -66,12 +66,12 @@ def test_alert_command_runs_once(tmp_path):
     }
     ops_kill_switch.init(cfg)
     ops_kill_switch.record_error("rest")
-    assert out.read_text().strip() == "run"
+    assert out.read_text(encoding="utf-8").strip() == "run"
     ops_kill_switch.record_error("rest")
-    assert out.read_text().strip() == "run"
+    assert out.read_text(encoding="utf-8").strip() == "run"
     ops_kill_switch.manual_reset()
     ops_kill_switch.record_error("rest")
-    assert out.read_text().splitlines() == ["run", "run"]
+    assert out.read_text(encoding="utf-8").splitlines() == ["run", "run"]
     ops_kill_switch.manual_reset()
 
 
