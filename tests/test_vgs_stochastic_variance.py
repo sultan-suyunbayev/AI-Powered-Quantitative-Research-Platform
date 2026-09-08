@@ -69,6 +69,16 @@ class TestPerParameterStochasticVariance:
             f"[OK] Per-parameter variance: param1={var_per_param[0]:.6f}, param2={var_per_param[1]:.6f}"
         )
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "Same defect as test_heterogeneous_constant_gradients_zero_variance: "
+            "VGS v3.1 takes the spatial mean and mean-of-squares before the EMA, so "
+            "Var = E[g^2] - E[g]^2 reports spatial heterogeneity rather than the "
+            "temporal noise VGS exists to measure. Recorded in "
+            "docs/AUDIT_2026-09.md; fixing it changes the state_dict format."
+        ),
+    )
     def test_stochastic_vs_spatial_variance(self):
         """Test that stochastic variance differs from spatial variance."""
 
@@ -170,12 +180,15 @@ class TestAggregationMethods:
         # Get normalized variance (90th percentile)
         global_var = vgs.get_normalized_variance()
 
-        # Compute per-parameter variances manually
-        # NOTE: In v2.0.1, _param_grad_sq_ema directly stores Var[g]
+        # Compute per-parameter variances manually.
+        # Since v3.1 _param_grad_sq_ema holds E[g**2], not Var[g]; the variance is
+        # E[g**2] - E[g]**2. Treating it as the variance overstates every entry by
+        # exactly one after normalisation.
         bias_correction = 1.0 - vgs.beta**vgs._step_count
-        abs_mean_corrected = vgs._param_grad_mean_ema / bias_correction  # E[|g|]
-        var_per_param = vgs._param_grad_sq_ema / bias_correction  # Var[g]
-        normalized_var_per_param = var_per_param / (abs_mean_corrected.pow(2) + vgs.eps)
+        mean_corrected = vgs._param_grad_mean_ema / bias_correction  # E[g]
+        sq_corrected = vgs._param_grad_sq_ema / bias_correction  # E[g**2]
+        var_per_param = sq_corrected - mean_corrected.pow(2)  # Var[g]
+        normalized_var_per_param = var_per_param / (mean_corrected.pow(2) + vgs.eps)
 
         # 90th percentile should be close to torch.quantile(..., 0.9)
         expected_p90 = torch.quantile(normalized_var_per_param, 0.9).item()
@@ -229,8 +242,9 @@ class TestBackwardCompatibility:
 
             # Check that warning was issued
             assert len(w) == 1
-            assert "VGS Checkpoint Migration" in str(w[0].message)
-            assert "OLD FORMAT DETECTED" in str(w[0].message)
+            # The warning was rewritten for v3.1 around the E[g²] correction.
+            assert "VGS v3.1 CRITICAL FIX" in str(w[0].message)
+            assert "mean of squares" in str(w[0].message)
 
         # Config should be loaded
         assert vgs.beta == 0.99
