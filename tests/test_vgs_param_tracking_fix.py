@@ -139,17 +139,23 @@ class TestVGSParameterTracking:
             model.save(save_path)
             loaded_model = DistributionalPPO.load(save_path, env=env)
 
-            # Collect some data
+            # Collect some data. collect_rollouts takes a callback as its second
+            # argument, and _last_obs is only primed by _setup_learn -- after a
+            # bare load() it is still None.
+            _, callback = loaded_model._setup_learn(
+                total_timesteps=loaded_model.n_steps, callback=None
+            )
+            callback.on_training_start(locals(), globals())
             loaded_model.collect_rollouts(
                 loaded_model.env,
-                loaded_model._last_obs,
+                callback,
                 loaded_model.rollout_buffer,
                 n_rollout_steps=loaded_model.n_steps,
             )
 
             # Compute gradients
             loaded_model.policy.optimizer.zero_grad()
-            _, loss_dict = loaded_model.train()
+            loaded_model.train()  # returns None
 
             # Check that VGS actually has statistics
             vgs = loaded_model._variance_gradient_scaler

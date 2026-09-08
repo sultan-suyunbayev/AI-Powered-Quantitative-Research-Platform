@@ -2019,10 +2019,12 @@ def _resolve_nested(cfg_obj, attr: str):
             return extra.get(attr)
     return None
 
+
 def _coerce_bool(value: object) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "on"}
     return bool(value)
+
 
 def _extract_action_overrides_from_cfg(cfg_obj) -> tuple[dict[str, object], bool]:
     def _normalise_section(section_obj: Any) -> Mapping[str, Any]:
