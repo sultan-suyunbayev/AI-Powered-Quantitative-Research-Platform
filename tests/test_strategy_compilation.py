@@ -4,17 +4,22 @@ import pathlib
 import sys
 import pytest
 
-# Mock environmental token required by app.py
-os.environ["SEASONALITY_API_TOKEN"] = "dummy_test_token"
+# Mock environmental token required by app.py.  setdefault, not assignment:
+# app.API_TOKEN is captured at first import, so overwriting the variable here
+# would desynchronise it whenever another module imported app first.
+os.environ.setdefault("SEASONALITY_API_TOKEN", "dummy_test_token")
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import app as app_module
 from app import api
 from fastapi.testclient import TestClient
 
-client = TestClient(api)
+# The global auth middleware only whitelists loopback peers; the TestClient
+# peer is "testclient", so authenticate explicitly with the API token.
+client = TestClient(api, headers={"X-API-Key": app_module.API_TOKEN})
 
 
 def test_get_strategy_templates():

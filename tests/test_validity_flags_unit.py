@@ -13,6 +13,12 @@ import numpy as np
 import pytest
 from unittest.mock import MagicMock
 
+import feature_config as _fc
+
+# The external block grew from 21 (crypto only) to 35 (crypto + stock + macro).
+# Take the width from the layout so the test tracks it instead of pinning it.
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+
 
 def test_get_safe_float_with_validity_valid_value():
     """Test that valid values return (value, True)."""
@@ -181,8 +187,8 @@ def test_extract_norm_cols_returns_tuple():
     # Check shapes
     assert isinstance(values, np.ndarray), "values should be ndarray"
     assert isinstance(validity, np.ndarray), "validity should be ndarray"
-    assert values.shape == (21,), "values should have shape (21,)"
-    assert validity.shape == (21,), "validity should have shape (21,)"
+    assert values.shape == (_EXT_DIM,), f"values should have shape ({_EXT_DIM},)"
+    assert validity.shape == (_EXT_DIM,), f"validity should have shape ({_EXT_DIM},)"
     assert values.dtype == np.float32, "values should be float32"
     assert validity.dtype == bool, "validity should be bool"
 
@@ -243,7 +249,7 @@ def test_extract_norm_cols_all_valid():
 
     mediator = Mediator.__new__(Mediator)
 
-    # All 21 features present and valid
+    # Every external feature present and valid
     row = {
         "cvd_24h": 0.1,
         "cvd_7d": 0.2,
@@ -266,6 +272,22 @@ def test_extract_norm_cols_all_valid():
         "taker_buy_ratio_momentum_4h": 0.01,
         "taker_buy_ratio_momentum_8h": 0.02,
         "taker_buy_ratio_momentum_12h": 0.015,
+        # Stock block (Phase 5)
+        "vix_normalized": 0.4,  # already tanh-normalised upstream, range [-3, 3]
+        "vix_regime": 0.25,
+        "market_regime": 0.4,
+        "rs_spy_20d": 0.03,
+        "rs_spy_50d": 0.05,
+        "rs_qqq_20d": 0.02,
+        "sector_momentum": 0.01,
+        # Macro & corporate block (Phase 6)
+        "dxy_value": 103.0,
+        "treasury_10y_yield": 4.2,
+        "real_yield_proxy": 1.8,
+        "days_until_earnings": 30.0,
+        "trailing_dividend_yield": 1.4,
+        "last_earnings_surprise": 5.0,
+        "in_earnings_blackout": 0.0,
     }
 
     values, validity = mediator._extract_norm_cols(row)
@@ -293,8 +315,15 @@ def test_extract_norm_cols_all_missing():
     # All should be invalid (features not in row)
     assert np.all(~validity), "All features should be invalid when data is missing"
 
-    # All values should be 0.0 (default fallback)
-    assert np.all(values == 0.0), "All missing features should fallback to 0.0"
+    # Most features fall back to 0.0.  Two carry a documented non-zero default:
+    # vix_regime (0.5 = "normal") and days_until_earnings_norm (1.0 = "far from
+    # earnings"), because 0.0 would read as "extreme VIX" / "earnings today".
+    non_zero_defaults = {22: 0.5, 31: 1.0}
+    for idx, value in enumerate(values):
+        expected = non_zero_defaults.get(idx, 0.0)
+        assert value == pytest.approx(
+            expected
+        ), f"missing feature [{idx}] should fall back to {expected}, got {value}"
 
 
 def test_extract_norm_cols_partial_missing():
@@ -364,7 +393,7 @@ def test_backward_compatibility_with_old_code():
     # Old code could temporarily use just values (ignore validity)
     # But this defeats the purpose of the fix!
     assert isinstance(values, np.ndarray), "Values can be used as before"
-    assert values.shape == (21,), "Shape is the same"
+    assert values.shape == (_EXT_DIM,), "Shape follows the declared external block"
 
 
 if __name__ == "__main__":

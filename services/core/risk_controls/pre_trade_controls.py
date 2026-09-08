@@ -865,7 +865,11 @@ class PreTradeControls:
                 f"Trader authorized: {authorization.trader_id}",
                 extra={
                     "trader_id": authorization.trader_id,
-                    "name": authorization.name,
+                    # NOT "name": logging.Logger.makeRecord raises
+                    # KeyError("Attempt to overwrite 'name' in LogRecord") for any
+                    # extra key that shadows a LogRecord attribute, so this call
+                    # failed outright whenever INFO was enabled.
+                    "trader_name": authorization.name,
                 },
             )
 

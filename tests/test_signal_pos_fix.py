@@ -8,7 +8,7 @@ Key changes tested:
 1. obs_builder.pyx now accepts signal_pos parameter
 2. mediator.py passes signal_pos to build_observation_vector()
 3. feature_config.py has agent block size=7 (was 6)
-4. N_FEATURES is now 64 (was 63)
+4. N_FEATURES counts signal_pos among the agent features
 """
 
 import pytest
@@ -65,17 +65,15 @@ class TestSignalPosInObservation:
             "signal_pos" in agent_block["description"]
         ), "signal_pos should be mentioned in agent block description"
 
-    def test_n_features_updated(self):
-        """N_FEATURES should be 85 after adding signal_pos (was 84)."""
-        from feature_config import N_FEATURES, make_layout
+    def test_n_features_counts_signal_pos(self):
+        """signal_pos is one of the agent features, and N_FEATURES is their sum."""
+        import feature_config
 
-        # Rebuild layout
-        make_layout({})
+        layout = feature_config.make_layout({})
 
-        # N_FEATURES should be 85 (was 84)
-        # 84 + 1 (signal_pos) = 85
-        # Full breakdown: 3+2+2+14+2+7+3+2+5+21+21+2+1 = 85
-        assert N_FEATURES == 85, f"N_FEATURES should be 85, got {N_FEATURES}"
+        agent_block = next(b for b in layout if b["name"] == "agent")
+        assert "signal_pos" in agent_block["description"]
+        assert sum(b["size"] for b in layout) == feature_config.N_FEATURES
 
     def test_obs_builder_accepts_signal_pos(self):
         """obs_builder.build_observation_vector should accept signal_pos parameter."""
@@ -233,20 +231,24 @@ class TestFeatureLayoutConsistency:
 
         make_layout({})
 
+        # Order follows obs_builder.build_observation_vector_c, which writes the
+        # externals, then the token metadata and one-hot, and only then the
+        # validity flags.  The declaration used to put external_validity right
+        # after external, which put every later block at the wrong offset.
         expected_order = [
-            "bar",  # 0-2
-            "ma5",  # 3-4
-            "ma20",  # 5-6
-            "indicators",  # 7-20
-            "derived",  # 21-22
-            "agent",  # 23-29 (now 7 elements including signal_pos)
-            "microstructure",  # 30-32
-            "bb_context",  # 33-34
-            "metadata",  # 35-39
-            "external",  # 40-60
-            "external_validity",  # 61-81
-            "token_meta",  # 82-83
-            "token",  # 84
+            "bar",
+            "ma5",
+            "ma20",
+            "indicators",
+            "derived",
+            "agent",  # 7 elements, signal_pos included
+            "microstructure",
+            "bb_context",
+            "metadata",
+            "external",
+            "token_meta",
+            "token",
+            "external_validity",
         ]
 
         actual_order = [block["name"] for block in FEATURES_LAYOUT]
@@ -264,8 +266,9 @@ class TestFeatureLayoutConsistency:
         assert (
             total == N_FEATURES
         ), f"Sum of block sizes ({total}) should equal N_FEATURES ({N_FEATURES})"
-        # Total: 3+2+2+14+2+7+3+2+5+21+21+2+1 = 85
-        assert total == 85, f"Total features should be 85, got {total}"
+        # The external block carries one validity flag per feature.
+        sizes = {block["name"]: block["size"] for block in FEATURES_LAYOUT}
+        assert sizes["external_validity"] == sizes["external"]
 
 
 if __name__ == "__main__":

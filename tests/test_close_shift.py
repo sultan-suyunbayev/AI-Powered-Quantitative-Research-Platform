@@ -3,6 +3,7 @@ import sys
 import types
 import numpy as np
 import pandas as pd
+import pytest
 
 sys.path.append(os.getcwd())
 # stub minimal optional modules required for import
@@ -12,7 +13,6 @@ except ImportError:
     lob_state_stub = types.ModuleType("lob_state_cython")
     lob_state_stub.N_FEATURES = 1
     sys.modules["lob_state_cython"] = lob_state_stub
-mediator_stub = types.ModuleType("mediator")
 
 
 class _Mediator:
@@ -25,11 +25,23 @@ class _Mediator:
     def reset(self):
         return np.zeros(1, dtype=np.float32), {}
 
+    def _build_observation(self, *, row=None, state=None, mark_price=None):
+        """TradingEnv.step() calls this on every step; shape follows the env."""
+        return np.zeros(self.env.observation_space.shape, dtype=np.float32)
 
-mediator_stub.Mediator = _Mediator
-sys.modules["mediator"] = mediator_stub
 
+import trading_patchnew
 from trading_patchnew import TradingEnv
+
+
+@pytest.fixture(autouse=True)
+def _use_stub_mediator(monkeypatch):
+    """Give TradingEnv the lightweight mediator, without touching sys.modules.
+
+    Replacing sys.modules["mediator"] leaked the stub into every later test in
+    the same worker process; patching the name TradingEnv bound keeps it here.
+    """
+    monkeypatch.setattr(trading_patchnew, "Mediator", _Mediator)
 
 
 def test_close_not_in_observation():
