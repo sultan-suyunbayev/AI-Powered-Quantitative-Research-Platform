@@ -311,7 +311,8 @@ def test_distributionalppo_initialises_with_popart_disabled(
 
     def _fake_super_init(self, *args: Any, **kwargs: Any) -> None:
         logger = getattr(self, "logger", _CaptureLogger())
-        self.logger = logger
+        # logger is a read-only property on BaseAlgorithm; the backing attribute
+        # is _logger, which is what set_logger writes.
         self._logger = logger
         self.policy = _PolicyStub()
         self.device = torch.device("cpu")
@@ -352,7 +353,7 @@ def test_distributionalppo_initialises_with_popart_disabled(
     monkeypatch.setattr(DistributionalPPO, "_setup_model", _fake_setup_model)
 
     algo = DistributionalPPO.__new__(DistributionalPPO)
-    algo.logger = _CaptureLogger()
+    algo.set_logger(_CaptureLogger())  # logger is a read-only property on BaseAlgorithm
     algo._logger = algo.logger
 
     cfg = {
@@ -397,9 +398,13 @@ def test_popart_save_load_retains_disabled_state(
 
     def _fake_super_init(self, *args: Any, **kwargs: Any) -> None:
         logger = getattr(self, "logger", _CaptureLogger())
-        self.logger = logger
+        # logger is a read-only property on BaseAlgorithm; the backing attribute
+        # is _logger, which is what set_logger writes.
         self._logger = logger
-        self.policy = _PolicyStub()
+        # The load path reconstructs the model with policy=<class>; instantiate it
+        # so self.policy is an object and its methods are bound.
+        policy_arg = kwargs.get("policy", args[0] if args else None)
+        self.policy = policy_arg() if isinstance(policy_arg, type) else _PolicyStub()
         self.policy_class = _PolicyStub
         self.device = torch.device("cpu")
         self.observation_space = types.SimpleNamespace()
@@ -535,7 +540,7 @@ def test_popart_save_load_retains_disabled_state(
 
     algo = DistributionalPPO.__new__(DistributionalPPO)
     logger = _CaptureLogger()
-    algo.logger = logger
+    algo.set_logger(logger)  # logger is a read-only property on BaseAlgorithm
     algo._logger = logger
 
     DistributionalPPO.__init__(
