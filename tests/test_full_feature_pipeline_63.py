@@ -14,6 +14,25 @@ import pandas as pd
 from unittest.mock import Mock, MagicMock
 from feature_config import make_layout, EXT_NORM_DIM, N_FEATURES
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
 
 def test_ext_norm_dim_is_21():
     """Проверка что EXT_NORM_DIM = 21 (было 16, добавили 5)"""
@@ -161,7 +180,7 @@ def test_obs_builder_applies_tanh():
     norm_cols = np.array([1000.0] * 21, dtype=np.float32)
 
     # Создаем output array
-    out = np.zeros(62, dtype=np.float32)
+    out = np.zeros(_N_FEATURES, dtype=np.float32)
 
     # Вызываем build_observation_vector с минимальными параметрами
     build_observation_vector(
@@ -187,14 +206,17 @@ def test_obs_builder_applies_tanh():
         risk_off_flag=False,
         cash=10000.0,
         units=0.0,
+        signal_pos=0.0,
         last_vol_imbalance=0.0,
         last_trade_intensity=0.0,
         last_realized_spread=0.0,
         last_agent_fill_ratio=0.0,
         token_id=0,
-        max_num_tokens=1,
-        num_tokens=1,
+        max_num_tokens=_MAX_TOKENS,
+        num_tokens=_MAX_TOKENS,
         norm_cols_values=norm_cols,
+        norm_cols_validity=np.ones(_EXT_DIM, dtype=np.uint8),
+        enable_validity_flags=True,
         out_features=out,
     )
 
@@ -278,6 +300,7 @@ def test_full_pipeline_integration():
     mock_env.df = df
     mock_env.state = Mock(
         units=0.1,
+        signal_pos=0.0,
         cash=10000.0,
         max_position=1.0,
         step_idx=1,

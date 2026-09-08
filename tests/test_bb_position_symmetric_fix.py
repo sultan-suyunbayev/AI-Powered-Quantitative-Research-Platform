@@ -17,6 +17,26 @@ Research support:
 import pytest
 import numpy as np
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
+
 try:
     from obs_builder import build_observation_vector
 
@@ -38,8 +58,8 @@ class TestBBPositionSymmetricClipping:
         self.bb_width = self.bb_upper - self.bb_lower  # = 10.0
 
         # External features (21 elements for 4h timeframe)
-        self.norm_cols = np.zeros(21, dtype=np.float32)
-        self.norm_cols_validity = np.ones(21, dtype=np.uint8)
+        self.norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
+        self.norm_cols_validity = np.ones(_EXT_DIM, dtype=np.uint8)
 
         # Output buffer (83 features without validity flags, 104 with validity flags)
         # Feature layout:
@@ -73,8 +93,10 @@ class TestBBPositionSymmetricClipping:
         # 39-59: external features (21)
         # 60-62: token metadata (num_tokens_norm, token_id_norm, padding)
         # 63-83: external validity flags (21) if enabled
-        self.out_features = np.zeros(104, dtype=np.float32)
-        self.bb_position_idx = 32
+        self.out_features = np.zeros(_N_FEATURES, dtype=np.float32)
+        # bb_position is the first slot of the bb_context block; the hard-coded 32
+        # pointed into microstructure after the layout grew.
+        self.bb_position_idx = _block_start("bb_context")
 
     def test_price_at_middle_returns_neutral(self):
         """
@@ -106,13 +128,14 @@ class TestBBPositionSymmetricClipping:
             risk_off_flag=False,
             cash=10000.0,
             units=0.0,
+            signal_pos=0.0,
             last_vol_imbalance=0.0,
             last_trade_intensity=0.0,
             last_realized_spread=0.0,
             last_agent_fill_ratio=0.0,
             token_id=0,
-            max_num_tokens=1,
-            num_tokens=1,
+            max_num_tokens=_MAX_TOKENS,
+            num_tokens=_MAX_TOKENS,
             norm_cols_values=self.norm_cols,
             norm_cols_validity=self.norm_cols_validity,
             enable_validity_flags=True,
@@ -154,13 +177,14 @@ class TestBBPositionSymmetricClipping:
             risk_off_flag=False,
             cash=10000.0,
             units=0.0,
+            signal_pos=0.0,
             last_vol_imbalance=0.0,
             last_trade_intensity=0.0,
             last_realized_spread=0.0,
             last_agent_fill_ratio=0.0,
             token_id=0,
-            max_num_tokens=1,
-            num_tokens=1,
+            max_num_tokens=_MAX_TOKENS,
+            num_tokens=_MAX_TOKENS,
             norm_cols_values=self.norm_cols,
             norm_cols_validity=self.norm_cols_validity,
             enable_validity_flags=True,
@@ -202,13 +226,14 @@ class TestBBPositionSymmetricClipping:
             risk_off_flag=False,
             cash=10000.0,
             units=0.0,
+            signal_pos=0.0,
             last_vol_imbalance=0.0,
             last_trade_intensity=0.0,
             last_realized_spread=0.0,
             last_agent_fill_ratio=0.0,
             token_id=0,
-            max_num_tokens=1,
-            num_tokens=1,
+            max_num_tokens=_MAX_TOKENS,
+            num_tokens=_MAX_TOKENS,
             norm_cols_values=self.norm_cols,
             norm_cols_validity=self.norm_cols_validity,
             enable_validity_flags=True,
@@ -255,13 +280,14 @@ class TestBBPositionSymmetricClipping:
             risk_off_flag=False,
             cash=10000.0,
             units=0.0,
+            signal_pos=0.0,
             last_vol_imbalance=0.0,
             last_trade_intensity=0.0,
             last_realized_spread=0.0,
             last_agent_fill_ratio=0.0,
             token_id=0,
-            max_num_tokens=1,
-            num_tokens=1,
+            max_num_tokens=_MAX_TOKENS,
+            num_tokens=_MAX_TOKENS,
             norm_cols_values=self.norm_cols,
             norm_cols_validity=self.norm_cols_validity,
             enable_validity_flags=True,
@@ -315,13 +341,14 @@ class TestBBPositionSymmetricClipping:
             risk_off_flag=False,
             cash=10000.0,
             units=0.0,
+            signal_pos=0.0,
             last_vol_imbalance=0.0,
             last_trade_intensity=0.0,
             last_realized_spread=0.0,
             last_agent_fill_ratio=0.0,
             token_id=0,
-            max_num_tokens=1,
-            num_tokens=1,
+            max_num_tokens=_MAX_TOKENS,
+            num_tokens=_MAX_TOKENS,
             norm_cols_values=self.norm_cols,
             norm_cols_validity=self.norm_cols_validity,
             enable_validity_flags=True,
@@ -369,13 +396,14 @@ class TestBBPositionSymmetricClipping:
             risk_off_flag=False,
             cash=10000.0,
             units=0.0,
+            signal_pos=0.0,
             last_vol_imbalance=0.0,
             last_trade_intensity=0.0,
             last_realized_spread=0.0,
             last_agent_fill_ratio=0.0,
             token_id=0,
-            max_num_tokens=1,
-            num_tokens=1,
+            max_num_tokens=_MAX_TOKENS,
+            num_tokens=_MAX_TOKENS,
             norm_cols_values=self.norm_cols,
             norm_cols_validity=self.norm_cols_validity,
             enable_validity_flags=True,
@@ -412,13 +440,14 @@ class TestBBPositionSymmetricClipping:
             risk_off_flag=False,
             cash=10000.0,
             units=0.0,
+            signal_pos=0.0,
             last_vol_imbalance=0.0,
             last_trade_intensity=0.0,
             last_realized_spread=0.0,
             last_agent_fill_ratio=0.0,
             token_id=0,
-            max_num_tokens=1,
-            num_tokens=1,
+            max_num_tokens=_MAX_TOKENS,
+            num_tokens=_MAX_TOKENS,
             norm_cols_values=self.norm_cols,
             norm_cols_validity=self.norm_cols_validity,
             enable_validity_flags=True,
@@ -481,13 +510,14 @@ class TestBBPositionSymmetricClipping:
                 risk_off_flag=False,
                 cash=10000.0,
                 units=0.0,
+                signal_pos=0.0,
                 last_vol_imbalance=0.0,
                 last_trade_intensity=0.0,
                 last_realized_spread=0.0,
                 last_agent_fill_ratio=0.0,
                 token_id=0,
-                max_num_tokens=1,
-                num_tokens=1,
+                max_num_tokens=_MAX_TOKENS,
+                num_tokens=_MAX_TOKENS,
                 norm_cols_values=self.norm_cols,
                 norm_cols_validity=self.norm_cols_validity,
                 enable_validity_flags=True,
@@ -515,7 +545,10 @@ class TestBBPositionSymmetricClipping:
         extreme_prices = [
             self.bb_lower - 1 * self.bb_width,  # -1 width below
             self.bb_lower - 2 * self.bb_width,  # -2 widths below
-            self.bb_lower - 10 * self.bb_width,  # -10 widths below (extreme)
+            # 9 widths, not 10: the builder rejects a non-positive price
+            # outright, and bb_lower - 10 * bb_width is negative here. Nine
+            # widths below the band exercises the same clipping.
+            self.bb_lower - 9 * self.bb_width,
         ]
 
         for price in extreme_prices:
@@ -542,13 +575,14 @@ class TestBBPositionSymmetricClipping:
                 risk_off_flag=False,
                 cash=10000.0,
                 units=0.0,
+                signal_pos=0.0,
                 last_vol_imbalance=0.0,
                 last_trade_intensity=0.0,
                 last_realized_spread=0.0,
                 last_agent_fill_ratio=0.0,
                 token_id=0,
-                max_num_tokens=1,
-                num_tokens=1,
+                max_num_tokens=_MAX_TOKENS,
+                num_tokens=_MAX_TOKENS,
                 norm_cols_values=self.norm_cols,
                 norm_cols_validity=self.norm_cols_validity,
                 enable_validity_flags=True,
@@ -594,13 +628,14 @@ class TestBBPositionSymmetricClipping:
             risk_off_flag=False,
             cash=10000.0,
             units=0.0,
+            signal_pos=0.0,
             last_vol_imbalance=0.0,
             last_trade_intensity=0.0,
             last_realized_spread=0.0,
             last_agent_fill_ratio=0.0,
             token_id=0,
-            max_num_tokens=1,
-            num_tokens=1,
+            max_num_tokens=_MAX_TOKENS,
+            num_tokens=_MAX_TOKENS,
             norm_cols_values=self.norm_cols,
             norm_cols_validity=self.norm_cols_validity,
             enable_validity_flags=True,

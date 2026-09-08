@@ -33,6 +33,26 @@ import pytest
 import sys
 from pathlib import Path
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
+
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -85,8 +105,8 @@ def create_valid_inputs(**overrides):
         "last_realized_spread": 0.001,
         "last_agent_fill_ratio": 0.95,
         "token_id": 0,
-        "max_num_tokens": 1,
-        "num_tokens": 1,
+        "max_num_tokens": _MAX_TOKENS,
+        "num_tokens": _MAX_TOKENS,
     }
 
     defaults.update(overrides)
@@ -103,8 +123,8 @@ def build_obs_with_inputs(**kwargs):
     inputs = create_valid_inputs(**kwargs)
 
     # Create norm_cols and output array
-    norm_cols = np.zeros(21, dtype=np.float32)
-    obs = np.zeros(63, dtype=np.float32)
+    norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
+    obs = np.zeros(_N_FEATURES, dtype=np.float32)
 
     build_observation_vector(
         float(inputs["price"]),

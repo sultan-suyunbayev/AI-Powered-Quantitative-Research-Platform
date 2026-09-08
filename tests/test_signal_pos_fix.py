@@ -16,6 +16,26 @@ import numpy as np
 import sys
 import os
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
+
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -70,8 +90,8 @@ class TestSignalPosInObservation:
 
         # Create output array
         obs = np.zeros(N_FEATURES, dtype=np.float32)
-        norm_cols = np.zeros(21, dtype=np.float32)
-        norm_validity = np.ones(21, dtype=np.uint8)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
+        norm_validity = np.ones(_EXT_DIM, dtype=np.uint8)
 
         # Call with signal_pos parameter (should not raise)
         signal_pos_value = 0.75
@@ -135,8 +155,8 @@ class TestSignalPosInObservation:
         make_layout({})
 
         obs = np.zeros(N_FEATURES, dtype=np.float32)
-        norm_cols = np.zeros(21, dtype=np.float32)
-        norm_validity = np.ones(21, dtype=np.uint8)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
+        norm_validity = np.ones(_EXT_DIM, dtype=np.uint8)
 
         # Test with out-of-range value
         build_observation_vector(

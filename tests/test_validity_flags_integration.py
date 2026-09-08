@@ -9,6 +9,24 @@ import pytest
 from unittest.mock import Mock, MagicMock
 import pandas as pd
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
 
 def test_feature_layout_includes_validity_flags():
     """Test that feature layout includes external_validity block with 21 features."""
@@ -225,10 +243,10 @@ def test_nan_feature_sets_validity_false():
     obs = np.zeros(n_features, dtype=np.float32)
 
     # Create norm_cols with first feature as NaN
-    norm_cols_values = np.zeros(21, dtype=np.float32)
+    norm_cols_values = np.zeros(_EXT_DIM, dtype=np.float32)
     norm_cols_values[0] = np.nan  # cvd_24h is NaN
 
-    norm_cols_validity = np.zeros(21, dtype=np.uint8)
+    norm_cols_validity = np.zeros(_EXT_DIM, dtype=np.uint8)
     norm_cols_validity[0] = 0  # cvd_24h is invalid
     norm_cols_validity[1:] = 1  # All others valid
 
@@ -295,7 +313,7 @@ def test_valid_feature_sets_validity_true():
 
     # Create norm_cols with all valid values
     norm_cols_values = np.arange(21, dtype=np.float32) + 1.0  # [1.0, 2.0, ..., 21.0]
-    norm_cols_validity = np.ones(21, dtype=np.uint8)
+    norm_cols_validity = np.ones(_EXT_DIM, dtype=np.uint8)
 
     try:
         obs_builder.build_observation_vector(

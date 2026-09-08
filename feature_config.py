@@ -223,21 +223,6 @@ def make_layout(obs_params=None):
                 "source": "external",
             }
         )
-    # External validity flags block (NEW - Phase 2 of ISSUE #2 fix)
-    # One validity flag per external feature to distinguish missing data (NaN) from zero values
-    if ext_dim and ext_dim > 0:
-        layout.append(
-            {
-                "name": "external_validity",
-                "size": ext_dim,
-                "dtype": "float32",
-                "clip": None,
-                "scale": 1.0,
-                "bias": 0.0,
-                "source": "external",
-                "description": "Validity flags for external features (1.0=valid, 0.0=NaN/missing)",
-            }
-        )
     # Token metadata block (num_tokens_norm, token_id_norm)
     if max_tokens > 0:
         layout.append(
@@ -262,6 +247,28 @@ def make_layout(obs_params=None):
                 "scale": 1.0,
                 "bias": 0.0,
                 "source": "token",
+            }
+        )
+    # External validity flags, one per external feature, distinguishing missing
+    # data (NaN) from a genuine zero.
+    #
+    # This block sits after the token blocks because that is where
+    # obs_builder.build_observation_vector_c writes it: externals, then token
+    # metadata and the one-hot, then the flags. It used to be declared directly
+    # after "external", which put every block from there on at the wrong offset
+    # for anything reading features by name -- 38 of 113 features in the default
+    # layout.
+    if ext_dim and ext_dim > 0:
+        layout.append(
+            {
+                "name": "external_validity",
+                "size": ext_dim,
+                "dtype": "float32",
+                "clip": None,
+                "scale": 1.0,
+                "bias": 0.0,
+                "source": "external",
+                "description": "Validity flags for external features (1.0=valid, 0.0=NaN/missing)",
             }
         )
     FEATURES_LAYOUT = layout
