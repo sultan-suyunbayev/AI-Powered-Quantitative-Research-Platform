@@ -166,7 +166,9 @@ def test_ts_ms_none_skips_multipliers_without_logging(caplog):
         sim.set_market_snapshot(bid=100.0, ask=101.0, liquidity=5.0, spread_bps=1.0, ts_ms=None)
     assert sim._last_liquidity == 5.0
     assert sim._last_spread_bps == 1.0
-    assert not caplog.records
+    # Only execution_sim must stay quiet; constructing the simulator also warns
+    # from impl_quantizer when no filters file is present, which is unrelated.
+    assert [r for r in caplog.records if r.name.startswith("execution_sim")] == []
 
 
 def test_seasonality_linear_interpolation():
