@@ -6,8 +6,27 @@ This test ensures that FEATURES_LAYOUT documentation matches the runtime
 observation vector construction order.
 """
 
-import pytest
 import numpy as np
+import pytest
+
+import feature_config as _fc
+
+# Sizes and offsets come from the layout: obs_builder writes through typed
+# memoryviews with bounds checking off, so a buffer that is too short corrupts
+# the heap instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
 
 
 def test_feature_layout_matches_obs_builder():
@@ -24,11 +43,10 @@ def test_feature_layout_matches_obs_builder():
 
     from feature_config import FEATURES_LAYOUT
 
-    # Build observation with distinctive values for each expected block
-    # Phase 5: norm_cols expanded from 21 to 28 for stock features
-    norm_cols = np.array([100.0 + i for i in range(28)], dtype=np.float32)
-    norm_cols_validity = np.ones(28, dtype=np.uint8)  # All valid for testing
-    out = np.zeros(99, dtype=np.float32)  # Updated from 63 to 99 for Phase 5
+    # Build observation with distinctive values for each expected block.
+    norm_cols = np.array([100.0 + i for i in range(_EXT_DIM)], dtype=np.float32)
+    norm_cols_validity = np.ones(_EXT_DIM, dtype=np.uint8)  # All valid for testing
+    out = np.zeros(_N_FEATURES, dtype=np.float32)
 
     # Set distinctive values for verification
     # Phase 5: Added signal_pos and enable_validity_flags parameters
@@ -61,8 +79,8 @@ def test_feature_layout_matches_obs_builder():
         last_realized_spread=0.0,
         last_agent_fill_ratio=0.0,
         token_id=0,
-        max_num_tokens=1,
-        num_tokens=1,
+        max_num_tokens=_MAX_TOKENS,
+        num_tokens=_MAX_TOKENS,
         norm_cols_values=norm_cols,
         norm_cols_validity=norm_cols_validity,
         enable_validity_flags=True,
@@ -151,24 +169,29 @@ def test_feature_layout_matches_obs_builder():
     assert abs(out[38] - 0.5) < 0.01, f"fear_greed_value at index 38 (50/100 = 0.5, got {out[38]})"
     assert out[39] == 1.0, "fear_greed_indicator at index 39"
 
-    # Block 16: External (28) - indices 40-67 (Phase 5: expanded from 21 to 28)
-    # norm_cols go through tanh(value) then clip to [-3, 3]
-    for i in range(28):
+    # Block 16: External - norm_cols go through tanh(value) then clip to [-3, 3]
+    ext_start = _block_start("external")
+    for i in range(_EXT_DIM):
         expected_val = np.tanh(100.0 + i)
         assert (
-            abs(out[40 + i] - expected_val) < 0.01
-        ), f"external[{i}] at index {40+i} (expected {expected_val}, got {out[40+i]})"
+            abs(out[ext_start + i] - expected_val) < 0.01
+        ), f"external[{i}] at index {ext_start + i} (expected {expected_val}, got {out[ext_start + i]})"
 
-    # Block 17: Token metadata (2) - indices 68-69 (Phase 5: shifted due to expanded external)
-    assert abs(out[68] - 1.0) < 0.01, f"num_tokens_norm at index 68 (got {out[68]})"
-    assert abs(out[69] - 0.0) < 0.01, f"token_id_norm at index 69 (got {out[69]})"
+    # Block 17: Token metadata (2)
+    meta_start = _block_start("token_meta")
+    assert abs(out[meta_start] - 1.0) < 0.01, f"num_tokens_norm (got {out[meta_start]})"
+    assert abs(out[meta_start + 1] - 0.0) < 0.01, f"token_id_norm (got {out[meta_start + 1]})"
 
-    # Block 18: Token one-hot (1) - index 70
-    assert out[70] == 1.0, "token one-hot at index 70"
+    # Block 18: Token one-hot
+    token_start = _block_start("token")
+    assert out[token_start] == 1.0, "token one-hot"
 
-    # Block 19: External validity (28) - indices 71-98 (Phase 5: added)
-    for i in range(28):
-        assert out[71 + i] == 1.0, f"external_validity[{i}] at index {71+i} should be 1.0 (valid)"
+    # Block 19: External validity - one flag per external feature
+    validity_start = _block_start("external_validity")
+    for i in range(_EXT_DIM):
+        assert (
+            out[validity_start + i] == 1.0
+        ), f"external_validity[{i}] at index {validity_start + i} should be 1.0 (valid)"
 
 
 def test_feature_config_has_correct_total_size():
@@ -185,10 +208,38 @@ def test_feature_config_has_correct_total_size():
 
     total = sum(block["size"] for block in FEATURES_LAYOUT)
 
-    # Phase 6 (2025-11-28): Expanded EXT_NORM_DIM from 28 to 35
-    # New total: 3+2+2+14+2+7+3+2+5+35+35+2+1 = 113
-    assert total == 113, f"FEATURES_LAYOUT total size = {total}, expected 113"
-    assert N_FEATURES == 113, f"N_FEATURES = {N_FEATURES}, expected 113"
+    assert total == N_FEATURES, f"FEATURES_LAYOUT total {total} != N_FEATURES {N_FEATURES}"
+
+
+def test_all_feature_counts_agree():
+    """Every source of the observation width must give the same number.
+
+    TradingEnv sizes observation_space from lob_state_cython._compute_n_features(),
+    Mediator._build_observation allocates that shape, and obs_builder writes into
+    it with bounds checking off.  When the probe used a narrower external block
+    than Mediator._extract_norm_cols produces, the builder wrote 31 floats past
+    the end of the observation array on every single step.
+    """
+    from feature_config import EXT_NORM_DIM, FEATURES_LAYOUT, N_FEATURES
+
+    layout_total = sum(block["size"] for block in FEATURES_LAYOUT)
+    assert N_FEATURES == layout_total
+
+    obs_builder = pytest.importorskip("obs_builder")
+    assert obs_builder.compute_n_features(FEATURES_LAYOUT) == layout_total
+
+    lob_state_cython = pytest.importorskip("lob_state_cython")
+    assert lob_state_cython._compute_n_features() == layout_total, (
+        "lob_state_cython probes build_observation_vector to size the observation "
+        "space; its probe must use the same external width as the mediator"
+    )
+
+    # And the mediator produces exactly that many external columns.
+    from mediator import Mediator
+
+    values, validity = Mediator._extract_norm_cols(Mediator.__new__(Mediator), {})
+    assert values.shape == (EXT_NORM_DIM,)
+    assert validity.shape == (EXT_NORM_DIM,)
 
 
 def test_feature_config_block_order_documentation():

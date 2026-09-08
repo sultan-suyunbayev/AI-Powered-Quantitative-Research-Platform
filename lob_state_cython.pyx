@@ -51,11 +51,24 @@ cdef void _shuffle_events(vector[MicroEvent]& events, vector[unsigned char]& sou
         sources[j] = tmp_source
 
 def _compute_n_features() -> int:
-    """Вспомогательная функция для подсчёта длины вектора признаков."""
-    cdef int max_tokens = 1      # максимальное число токенов (подгоните при необходимости)
+    """Вспомогательная функция для подсчёта длины вектора признаков.
+
+    The probe must use the SAME external width the production path feeds the
+    builder (``Mediator._extract_norm_cols`` -> ``feature_config.EXT_NORM_DIM``).
+    It used to hard-code 21 while the mediator had grown to 35, so this returned
+    85 where the real vector is 113 — and since TradingEnv sizes its
+    observation_space from here, and Mediator._build_observation allocates
+    ``np.zeros(observation_space.shape)``, every step wrote 31 floats past the
+    end of that array. obs_builder writes through memoryviews with bounds
+    checking off, so nothing raised: it silently corrupted the heap.
+    """
+    import feature_config as _fc
+
+    cdef int max_tokens = int(_fc.MAX_NUM_TOKENS)
     cdef int num_tokens = 1
-    norm_cols = np.zeros(21, dtype=np.float32)  # 21 external columns for 4h timeframe (see mediator.py:1018-1051 for full list)
-    norm_cols_validity = np.ones(21, dtype=np.uint8)  # All valid by default for feature counting
+    cdef int ext_dim = int(_fc.EXT_NORM_DIM)
+    norm_cols = np.zeros(ext_dim, dtype=np.float32)
+    norm_cols_validity = np.ones(ext_dim, dtype=np.uint8)  # All valid by default for feature counting
     # выделяем буфер заведомо большей длины
     buf = np.empty(256, dtype=np.float32)
     buf.fill(np.nan)

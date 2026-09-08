@@ -24,6 +24,8 @@ import logging
 import math
 import numpy as np
 
+import feature_config as _feature_config
+
 from core_models import ExecReport, TradeLogRow, Side, OrderType, Liquidity, ExecStatus
 
 logger = logging.getLogger(__name__)
@@ -1534,8 +1536,12 @@ class Mediator:
             values: (35,) float32 array - feature values (NaN→0.0 fallback)
             validity: (35,) bool array - True if feature was valid, False if NaN/Inf/None
         """
-        norm_cols_values = np.zeros(35, dtype=np.float32)
-        norm_cols_validity = np.zeros(35, dtype=bool)  # Default to invalid for all
+        # Width comes from the layout, not a literal: lob_state_cython sizes
+        # TradingEnv's observation_space by probing the builder with EXT_NORM_DIM
+        # columns, and the two drifting apart overflows the observation buffer.
+        ext_dim = int(_feature_config.EXT_NORM_DIM)
+        norm_cols_values = np.zeros(ext_dim, dtype=np.float32)
+        norm_cols_validity = np.zeros(ext_dim, dtype=bool)  # Default to invalid for all
 
         # =======================================================================
         # INDICES 0-20: ORIGINAL CRYPTO FEATURES (unchanged)
