@@ -9,10 +9,35 @@ was computed from empirical CVaR (without gradients) instead of predicted CVaR.
 Reference: distributional_ppo.py:8740-8755 (fixed implementation)
 """
 
+import pathlib
+import re
 import unittest
 from unittest.mock import Mock, MagicMock, patch
 import sys
 import os
+
+# Read the module by absolute path and in UTF-8: the tests do not control the
+# working directory, and the default encoding is cp1251 on a Russian Windows
+# install, which cannot decode this file.
+_PPO_SOURCE = pathlib.Path(__file__).resolve().parents[1] / "distributional_ppo.py"
+
+
+def _squash(text: str) -> str:
+    """Drop whitespace entirely so a match survives any line wrapping."""
+    return re.sub(r"\s+", "", text)
+
+
+class _Source(str):
+    """Module source whose ``in`` test ignores how the code is wrapped.
+
+    These assertions pin the shape of the constraint computation, not its
+    formatting; black reflowed several of those statements across lines, which
+    silently turned the checks into failures.
+    """
+
+    def __contains__(self, needle: object) -> bool:  # type: ignore[override]
+        return _squash(str(needle)) in _squash(str(self))
+
 
 # Add parent directory to path to import distributional_ppo
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -32,8 +57,8 @@ class TestLagrangianConstraintGradientFlow(unittest.TestCase):
         # (since PyTorch may not be available in test environment)
 
         # Verify the fix is present by checking code structure
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Check that the fix comment is present
         self.assertIn(
@@ -77,8 +102,8 @@ class TestLagrangianConstraintGradientFlow(unittest.TestCase):
         Old (WRONG): loss = loss + loss.new_tensor(lambda_scaled) * cvar_violation_unit_tensor
         New (CORRECT): loss = loss + lambda_tensor * predicted_cvar_violation_unit
         """
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Count occurrences of old pattern - should not exist in constraint section
         # We need to be careful here: the old code used cvar_violation_unit_tensor
@@ -104,8 +129,8 @@ class TestLagrangianConstraintGradientFlow(unittest.TestCase):
         """
         Verify that predicted CVaR violation is logged for monitoring.
         """
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Check that predicted violation is accumulated in bucket
         self.assertIn(
@@ -142,8 +167,8 @@ class TestLagrangianConstraintGradientFlow(unittest.TestCase):
         This is CORRECT: dual update should use empirical statistics,
         while constraint term in loss should use predicted CVaR.
         """
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Check that _bounded_dual_update is called with cvar_gap_unit_value
         # (which is computed from empirical CVaR)
@@ -163,8 +188,8 @@ class TestLagrangianConstraintGradientFlow(unittest.TestCase):
         """
         Verify that the implementation includes proper mathematical references.
         """
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Check for Nocedal & Wright reference
         self.assertIn(
@@ -173,16 +198,24 @@ class TestLagrangianConstraintGradientFlow(unittest.TestCase):
             "Code must reference Nocedal & Wright for mathematical justification",
         )
 
-        # Check that the reference is in the constraint section
-        constraint_section_start = code.find("if self.cvar_use_constraint:")
-        ref_position = code.find("Nocedal & Wright")
+        # The reference must sit next to the constraint code. Both strings occur
+        # more than once, so compare every pair rather than the first of each.
+        def _positions(needle: str) -> list[int]:
+            found = []
+            start = code.find(needle)
+            while start != -1:
+                found.append(start)
+                start = code.find(needle, start + 1)
+            return found
 
-        self.assertGreater(ref_position, 0, "Reference to Nocedal & Wright must exist")
+        ref_positions = _positions("Nocedal & Wright")
+        constraint_positions = _positions("if self.cvar_use_constraint:")
 
-        # Check that reference is near the constraint code (within 500 chars)
-        if constraint_section_start != -1:
-            distance = abs(ref_position - constraint_section_start)
-            self.assertLess(distance, 1000, "Reference should be near constraint implementation")
+        self.assertTrue(ref_positions, "Reference to Nocedal & Wright must exist")
+        self.assertTrue(constraint_positions, "Constraint block must exist")
+
+        closest = min(abs(ref - block) for ref in ref_positions for block in constraint_positions)
+        self.assertLess(closest, 1000, "Reference should be near constraint implementation")
 
     def test_tensor_creation_uses_explicit_device_dtype(self):
         """
@@ -191,8 +224,8 @@ class TestLagrangianConstraintGradientFlow(unittest.TestCase):
         While both loss.new_tensor() and torch.tensor() work correctly,
         torch.tensor() with explicit device/dtype is more clear and explicit.
         """
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Check that lambda_tensor is created explicitly
         self.assertIn(
@@ -207,8 +240,8 @@ class TestLagrangianConstraintGradientFlow(unittest.TestCase):
 
         This prevents NameError when logging metrics.
         """
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Check that there's an else clause that defines the variables
         self.assertIn(
@@ -231,8 +264,8 @@ class TestLagrangianConstraintMathematicalProperties(unittest.TestCase):
         """
         Constraint violation must be non-negative (clamped at min=0.0).
         """
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Check that predicted_cvar_violation_unit is clamped at min=0.0
         self.assertIn(
@@ -248,8 +281,8 @@ class TestLagrangianConstraintMathematicalProperties(unittest.TestCase):
         In Augmented Lagrangian method, lambda is updated via dual update,
         not through backpropagation.
         """
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Lambda should be created from a float value (lambda_scaled)
         # and should not have requires_grad=True
@@ -274,8 +307,8 @@ class TestLagrangianConstraintMathematicalProperties(unittest.TestCase):
         cvar_unit_tensor is computed from cvar_raw (predicted CVaR from value function),
         which has gradients. This is the key to fixing the gradient flow issue.
         """
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Check that cvar_unit_tensor is computed from cvar_raw (predicted)
         self.assertIn(
@@ -301,8 +334,8 @@ class TestBackwardsCompatibility(unittest.TestCase):
 
         These are used for monitoring and dual update, so they should not be removed.
         """
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Check that empirical CVaR is still logged
         self.assertIn(
@@ -322,8 +355,8 @@ class TestBackwardsCompatibility(unittest.TestCase):
         """
         Verify that bucket variable accumulation still works correctly.
         """
-        with open("distributional_ppo.py", "r") as f:
-            code = f.read()
+        with open(_PPO_SOURCE, "r", encoding="utf-8") as f:
+            code = _Source(f.read())
 
         # Check that bucket variables are initialized
         self.assertIn(

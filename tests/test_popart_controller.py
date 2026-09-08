@@ -9,7 +9,7 @@ torch = pytest.importorskip("torch")
 
 pytest.importorskip("sb3_contrib")
 
-from distributional_ppo import PopArtController, PopArtHoldoutBatch
+from distributional_ppo import DistributionalPPO, PopArtController, PopArtHoldoutBatch
 
 
 class DummyLogger:
@@ -96,6 +96,11 @@ class DummyModel:
         mean = tensor.new_tensor(self.raw_mean)
         std = tensor.new_tensor(self.raw_std)
         return tensor * std + mean
+
+    # PopArtController._evaluate_holdout calls this on the model. Borrow the real
+    # implementation rather than reimplementing its dispatch: it depends only on
+    # self.policy, and a divergent copy is what let this go missing.
+    _policy_value_outputs = DistributionalPPO._policy_value_outputs
 
 
 def _make_holdout(batch_size: int, input_dim: int, model: DummyModel) -> PopArtHoldoutBatch:

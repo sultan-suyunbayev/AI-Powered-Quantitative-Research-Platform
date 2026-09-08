@@ -1,8 +1,10 @@
-"""
-Comprehensive tests for distributional VF variance calculation fix.
+"""Comprehensive tests for the categorical value-function variance term.
 
-This test suite provides 100% coverage of edge cases, backward compatibility,
-shape handling, and integration scenarios.
+Atoms are shared across the batch ([num_atoms]) while the means are per sample
+([batch, 1]), so the centred atoms are atoms.unsqueeze(0) - mean, of shape
+[batch, num_atoms]. Squeezing the sample axis instead lines [num_atoms] up
+against [batch]: a RuntimeError unless the two happen to be equal, and silent
+nonsense when they are.
 """
 
 import pytest
@@ -125,12 +127,12 @@ def test_variance_calculation_with_none_old_probs():
         # New path: use old probs
         old_probs_norm = old_value_probs
         old_mean_norm = torch.zeros(batch_size, 1)
-        old_atoms_centered = atoms - old_mean_norm.squeeze(-1)
+        old_atoms_centered = atoms.unsqueeze(0) - old_mean_norm
         old_variance = ((old_atoms_centered**2) * old_probs_norm).sum(dim=1, keepdim=True)
     else:
         # Fallback path: uniform approximation
         old_mean_norm = current_mean
-        old_atoms_centered = atoms - old_mean_norm.squeeze(-1)
+        old_atoms_centered = atoms.unsqueeze(0) - old_mean_norm
         old_variance = (old_atoms_centered**2).mean(dim=1, keepdim=True)
 
     # Should work without error
@@ -194,7 +196,7 @@ def test_shape_compatibility_probs():
     assert old_values.shape[0] == old_value_probs.shape[0]
 
     # Compute variance
-    old_atoms_centered = atoms - old_values.squeeze(-1)
+    old_atoms_centered = atoms.unsqueeze(0) - old_values
     old_variance = ((old_atoms_centered**2) * old_value_probs).sum(dim=1, keepdim=True)
 
     assert old_variance.shape == (batch_size, 1)
@@ -339,7 +341,7 @@ def test_categorical_weighted_variance_correctness():
     mean = (probs * atoms).sum(dim=1, keepdim=True)
 
     # Weighted variance
-    atoms_centered = atoms - mean.squeeze(-1)
+    atoms_centered = atoms.unsqueeze(0) - mean
     variance_weighted = ((atoms_centered**2) * probs).sum(dim=1, keepdim=True)
 
     # Uniform variance (incorrect)
@@ -402,10 +404,15 @@ def test_variance_constraint_enforcement():
     new_centered = new_quantiles - new_mean
     new_variance = (new_centered**2).mean(dim=1, keepdim=True)
 
-    # Apply constraint
-    variance_ratio = new_variance / (old_variance + 1e-8)
-    variance_ratio_constrained = torch.clamp(variance_ratio, max=variance_factor**2)
-    std_ratio = torch.sqrt(variance_ratio_constrained)
+    # Apply the constraint the way distributional_ppo does: scale the spread
+    # down to at most old_std * factor, never up.
+    #   scale = clamp(max_std / current_std, max=1.0)
+    # Scaling by sqrt(clamp(new_var / old_var, max=factor**2)) instead widens a
+    # distribution that is already too wide.
+    old_std = torch.sqrt(old_variance + 1e-8)
+    new_std = torch.sqrt(new_variance + 1e-8)
+    max_std = old_std * variance_factor
+    std_ratio = torch.clamp(max_std / new_std, max=1.0)
 
     constrained_centered = new_centered * std_ratio
     constrained_variance = (constrained_centered**2).mean(dim=1, keepdim=True)
@@ -523,10 +530,10 @@ def test_full_pipeline_quantile():
     new_quantiles_centered = new_quantiles - new_mean
     new_variance = (new_quantiles_centered**2).mean(dim=1, keepdim=True)
 
-    # Step 4: Apply variance constraint
-    variance_ratio = new_variance / (old_variance + 1e-8)
-    variance_ratio_constrained = torch.clamp(variance_ratio, max=variance_factor**2)
-    std_ratio = torch.sqrt(variance_ratio_constrained)
+    # Step 4: Apply variance constraint (same formula as the trainer)
+    old_std = torch.sqrt(old_variance + 1e-8)
+    new_std = torch.sqrt(new_variance + 1e-8)
+    std_ratio = torch.clamp(old_std * variance_factor / new_std, max=1.0)
 
     constrained_quantiles_centered = new_quantiles_centered * std_ratio
     constrained_variance = (constrained_quantiles_centered**2).mean(dim=1, keepdim=True)
@@ -559,10 +566,10 @@ def test_full_pipeline_categorical():
     new_mean = (new_probs * atoms).sum(dim=1, keepdim=True)
 
     # Step 3: VF clipping variance calculation
-    old_atoms_centered = atoms - old_values.squeeze(-1)
+    old_atoms_centered = atoms.unsqueeze(0) - old_values
     old_variance = ((old_atoms_centered**2) * old_probs).sum(dim=1, keepdim=True)
 
-    new_atoms_centered = atoms - new_mean.squeeze(-1)
+    new_atoms_centered = atoms.unsqueeze(0) - new_mean
     new_variance = ((new_atoms_centered**2) * new_probs).sum(dim=1, keepdim=True)
 
     # Step 4: Apply variance constraint

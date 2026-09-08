@@ -11754,16 +11754,21 @@ class DistributionalPPO(RecurrentPPO):
 
                             # Apply legacy clipping based on mode (only if not using Twin Critics VF clipping)
                             if not use_twin_vf_clipping_cat:
+                                # Shapes: atoms_original is [num_atoms], the per-sample
+                                # quantities are [batch, 1], and the projection below wants
+                                # [batch, num_atoms] (the per_quantile branch and the twin
+                                # critics path both build that). Squeezing the per-sample
+                                # axis instead put [num_atoms] against [batch], which
+                                # raises unless the two happen to be equal -- and computes
+                                # nonsense when they are.
+                                atoms_row = atoms_original.unsqueeze(0)  # [1, num_atoms]
                                 if self.distributional_vf_clip_mode == "mean_only":
                                     # Legacy mode: shift atoms (projection can indirectly affect variance)
-                                    atoms_shifted = atoms_original + delta_norm.squeeze(
-                                        -1
-                                    )  # Broadcast delta
+                                    atoms_shifted = atoms_row + delta_norm  # [batch, num_atoms]
                                 elif self.distributional_vf_clip_mode == "mean_and_variance":
                                     # Improved mode: constrain variance by scaling atom spread
                                     # Compute variance of current distribution
-                                    current_mean = mean_values_norm_full.squeeze(-1)
-                                    atoms_centered = atoms_original - current_mean
+                                    atoms_centered = atoms_row - mean_values_norm_full
                                     current_variance = (
                                         (atoms_centered**2) * pred_probs_fp32
                                     ).sum(dim=1, keepdim=True)
@@ -11780,9 +11785,7 @@ class DistributionalPPO(RecurrentPPO):
                                             device=pred_probs_fp32.device,
                                             dtype=pred_probs_fp32.dtype,
                                         )
-                                        old_atoms_centered = atoms_original - old_mean_norm.squeeze(
-                                            -1
-                                        )
+                                        old_atoms_centered = atoms_row - old_mean_norm
                                         # Proper weighted variance using old probabilities
                                         old_variance_approx = (
                                             (old_atoms_centered**2) * old_probs_norm
@@ -11795,11 +11798,11 @@ class DistributionalPPO(RecurrentPPO):
                                             if self.normalize_returns
                                             else old_values_raw_aligned
                                         )
-                                        old_atoms_centered_approx = (
-                                            atoms_original - old_mean_norm.squeeze(-1)
-                                        )
+                                        old_atoms_centered_approx = atoms_row - old_mean_norm
                                         # Use uniform distribution as rough prior for old variance
-                                        old_variance_approx = (old_atoms_centered_approx**2).mean()
+                                        old_variance_approx = (old_atoms_centered_approx**2).mean(
+                                            dim=1, keepdim=True
+                                        )
 
                                     # Constrain variance: current_std <= old_std * factor
                                     # Compute current std and maximum allowed std
@@ -11813,13 +11816,14 @@ class DistributionalPPO(RecurrentPPO):
                                     variance_scale = torch.clamp(max_std / current_std, max=1.0)
 
                                     # Scale atoms toward clipped mean
-                                    atoms_shifted_base = atoms_original + delta_norm.squeeze(-1)
+                                    atoms_shifted_base = atoms_row + delta_norm
                                     atoms_shifted_centered = (
-                                        atoms_shifted_base - mean_values_norm_clipped.squeeze(-1)
+                                        atoms_shifted_base - mean_values_norm_clipped
                                     )
-                                    atoms_shifted = mean_values_norm_clipped.squeeze(
-                                        -1
-                                    ) + atoms_shifted_centered * variance_scale.squeeze(-1)
+                                    atoms_shifted = (
+                                        mean_values_norm_clipped
+                                        + atoms_shifted_centered * variance_scale
+                                    )
                                 elif self.distributional_vf_clip_mode == "per_quantile":
                                     # Per-quantile mode for categorical: clip each atom individually
                                     # For categorical critics with fixed atoms, we clip the entire atom support
