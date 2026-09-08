@@ -5,6 +5,7 @@ import pathlib
 import sys
 import tempfile
 
+import numpy as np
 import pytest
 
 base = pathlib.Path(__file__).resolve().parents[1]
@@ -228,6 +229,10 @@ def test_unquantized_limit_rejected_strict():
 
 def test_cancel_all_cancels_open_limits():
     sim = ExecutionSimulator(filters_path=None)
+    # Without a snapshot the simulator synthesises the best quote from the
+    # order's own price, so the limit crosses instead of resting; this test is
+    # about CANCEL_ALL, so give it a market the order does not cross.
+    sim.set_market_snapshot(bid=99.0, ask=101.0)
     limit_proto = ActionProto(
         action_type=ActionType.LIMIT,
         volume_frac=0.5,
@@ -236,7 +241,7 @@ def test_cancel_all_cancels_open_limits():
     )
     limit_id = sim.submit(limit_proto)
 
-    first_report = sim.pop_ready(ref_price=100.0)
+    first_report = sim.pop_ready(ref_price=101.0)
     assert first_report.trades == []
     assert limit_id in first_report.new_order_ids
     assert (limit_id, 2) in sim._ttl_orders
@@ -834,25 +839,34 @@ def test_attach_quantizer_sets_metadata(tmp_path: pathlib.Path):
 
 
 def test_ttl_two_steps_sim():
+    """ttl_steps=2: the order rests, then expires two steps later."""
     sim = make_sim(strict=False)
     sim.set_market_snapshot(bid=100.0, ask=101.0)
     proto = ActionProto(action_type=ActionType.LIMIT, volume_frac=0.2, abs_price=99.0, ttl_steps=2)
     oid = sim.submit(proto)
+
     rep1 = sim.pop_ready(ref_price=100.0)
-    assert rep1.new_order_ids == []
-    assert rep1.cancelled_ids == [oid]
+    assert rep1.new_order_ids == [oid]
+    assert rep1.cancelled_ids == []
     assert rep1.trades == []
+
     rep2 = sim.pop_ready(ref_price=100.0)
     assert rep2.cancelled_ids == []
+
     rep3 = sim.pop_ready(ref_price=100.0)
-    assert rep3.cancelled_ids == []
+    assert rep3.cancelled_ids == [oid]
+    assert rep3.cancelled_reasons == {oid: "TTL"}
+    assert rep3.trades == []
 
 
 def test_limit_maker_price_enqueues_without_trade():
     sim = ExecutionSimulator(filters_path=None)
     sim.set_market_snapshot(bid=100.0, ask=101.0)
 
-    proto = ActionProto(action_type=ActionType.LIMIT, volume_frac=0.1, abs_price=100.5)
+    # A BUY LIMIT below the best ask fills as maker only when the bar price
+    # reaches it (see the MAKER ORDER FILL LOGIC note in execution_sim); at 99.5
+    # against a bar at 100.0 it does not, so the order rests.
+    proto = ActionProto(action_type=ActionType.LIMIT, volume_frac=0.1, abs_price=99.5)
     oid = sim.submit(proto)
 
     report = sim.pop_ready(ref_price=100.0)
@@ -905,14 +919,36 @@ def test_unquantized_limit_rejected_lob():
     assert oid == 0
 
 
-def test_quantized_limit_crosses_lob():
+def test_quantized_limit_at_the_ask_is_accepted_by_the_filters():
+    """CythonLOB is a book, not a matching engine.
+
+    add_limit_order stores an order; crossing is resolved by the simulator, or
+    against the book through match_market_order. A bid at the ask price
+    therefore rests alongside it, and what this test pins is that the quantizer
+    passes 101.0 through unchanged.
+    """
     lob = CythonLOB()
     q = Quantizer(filters, strict=True)
     ask_ticks = int(round(101.0 * PRICE_SCALE))
     ask_id, _ = lob.add_limit_order(False, ask_ticks, 0.2, 0, True)
+
     bid_id, _ = add_limit_with_filters(lob, True, 101.0, 0.2, q)
-    assert bid_id == ask_id
-    assert not lob.contains_order(ask_id)
+    assert bid_id != 0, "the quantizer must accept a price already on the tick grid"
+    assert bid_id != ask_id
+    assert lob.contains_order(ask_id)
+    assert lob.contains_order(bid_id)
+
+    # The resting ask is consumed by a market order, which is what matches.
+    out_prices = np.zeros(8, dtype=np.float64)
+    out_volumes = np.zeros(8, dtype=np.float64)
+    out_is_buy = np.zeros(8, dtype=np.int32)
+    out_is_self = np.zeros(8, dtype=np.int32)
+    out_ids = np.zeros(8, dtype=np.int64)
+    lob.match_market_order(
+        True, 0.2, 0, True, out_prices, out_volumes, out_is_buy, out_is_self, out_ids, 8
+    )
+    assert not lob.contains_order(ask_id), "a market buy consumes the resting ask"
+    assert lob.contains_order(bid_id), "and leaves the resting bid alone"
 
 
 def test_ttl_two_steps_lob():

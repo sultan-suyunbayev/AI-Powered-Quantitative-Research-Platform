@@ -394,7 +394,9 @@ class TestSIEMExportService:
     @pytest.fixture
     def service(self) -> SIEMExportService:
         """Create service instance for testing."""
-        return SIEMExportService()
+        # simulation_mode: the fixtures point at example.com endpoints, which
+        # do not resolve. The exporters expose this switch for that reason.
+        return SIEMExportService(simulation_mode=True)
 
     @pytest.fixture
     def splunk_config(self) -> SIEMConfig:
@@ -662,7 +664,7 @@ class TestSplunkExporter:
             endpoint="https://splunk.example.com:8088",
             api_key="test-key",
         )
-        return SplunkExporter(config)
+        return SplunkExporter(config, simulation_mode=True)
 
     def test_export_event(self, exporter: SplunkExporter) -> None:
         """Test exporting single event."""
@@ -698,7 +700,7 @@ class TestElasticsearchExporter:
             provider=SIEMProvider.ELASTICSEARCH,
             endpoint="https://elastic.example.com:9200",
         )
-        return ElasticsearchExporter(config)
+        return ElasticsearchExporter(config, simulation_mode=True)
 
     def test_export_event(self, exporter: ElasticsearchExporter) -> None:
         """Test exporting single event."""
@@ -740,7 +742,10 @@ class TestFactoryFunctions:
 
     def test_export_to_splunk(self) -> None:
         """Test convenience function for Splunk export."""
-        service = create_siem_export()
+        # The endpoint below is an example.com name that never resolves, so the
+        # service runs in simulation mode; create_siem_export() has no switch
+        # for that, hence the direct construction.
+        service = SIEMExportService(simulation_mode=True)
         events = [
             SecurityEvent(
                 event_id=f"evt-{i}",
@@ -768,7 +773,7 @@ class TestFactoryFunctions:
 
     def test_export_to_elk(self) -> None:
         """Test convenience function for ELK export."""
-        service = create_siem_export()
+        service = SIEMExportService(simulation_mode=True)
         events = [
             SecurityEvent(
                 event_id=f"evt-{i}",
