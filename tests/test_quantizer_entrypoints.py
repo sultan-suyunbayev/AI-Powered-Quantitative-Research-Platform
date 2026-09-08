@@ -47,11 +47,11 @@ from quantizer import Quantizer
 
 def _components_stub() -> Components:
     data = {
-        "market_data": {"target": "tests.di_stubs:DummyMarketData", "params": {}},
-        "executor": {"target": "tests.di_stubs:DummyExecutor", "params": {}},
-        "feature_pipe": {"target": "tests.di_stubs:DummyFeaturePipe", "params": {}},
-        "policy": {"target": "tests.di_stubs:DummyPolicy", "params": {}},
-        "risk_guards": {"target": "tests.di_stubs:DummyRiskGuards", "params": {}},
+        "market_data": {"target": "di_stubs:DummyMarketData", "params": {}},
+        "executor": {"target": "di_stubs:DummyExecutor", "params": {}},
+        "feature_pipe": {"target": "di_stubs:DummyFeaturePipe", "params": {}},
+        "policy": {"target": "di_stubs:DummyPolicy", "params": {}},
+        "risk_guards": {"target": "di_stubs:DummyRiskGuards", "params": {}},
     }
     return Components.parse_obj(data)
 
@@ -64,11 +64,11 @@ def test_load_config_preserves_quantizer_section(tmp_path):
         "api": {"api_key": "k", "api_secret": "s", "testnet": True},
         "data": {"symbols": ["BTCUSDT"], "timeframe": "1m"},
         "components": {
-            "market_data": {"target": "tests.di_stubs:DummyMarketData"},
-            "executor": {"target": "tests.di_stubs:DummyExecutor"},
-            "feature_pipe": {"target": "tests.di_stubs:DummyFeaturePipe"},
-            "policy": {"target": "tests.di_stubs:DummyPolicy"},
-            "risk_guards": {"target": "tests.di_stubs:DummyRiskGuards"},
+            "market_data": {"target": "di_stubs:DummyMarketData"},
+            "executor": {"target": "di_stubs:DummyExecutor"},
+            "feature_pipe": {"target": "di_stubs:DummyFeaturePipe"},
+            "policy": {"target": "di_stubs:DummyPolicy"},
+            "risk_guards": {"target": "di_stubs:DummyRiskGuards"},
         },
         "quantizer": {
             "path": str(filters_path),
@@ -142,7 +142,8 @@ def test_quantizer_refresh_is_debounced(monkeypatch, tmp_path):
             self.stdout = ""
             self.stderr = ""
 
-    def _fake_run(cmd, capture_output=True, text=True):  # pragma: no cover - simple stub
+    # **kwargs so the stub keeps matching when the caller passes a timeout
+    def _fake_run(cmd, capture_output=True, text=True, **kwargs):  # pragma: no cover - simple stub
         run_calls.append(list(cmd))
         return _DummyCompletedProcess()
 

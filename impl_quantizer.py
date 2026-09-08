@@ -30,6 +30,12 @@ import warnings
 
 from services import monitoring
 
+# The refresh shells out to a script that talks to the Binance REST API
+# behind a retry loop. Without a bound, a network that blackholes rather
+# than refuses the connection hangs the calling process indefinitely -- and
+# this runs from QuantizerImpl.__init__.
+_FILTERS_REFRESH_TIMEOUT_S = 120
+
 try:
     from quantizer import Quantizer, OrderCheckResult, SymbolFilters
 except Exception as e:  # pragma: no cover
@@ -325,7 +331,17 @@ class QuantizerImpl:
             status = "missing"
             status_reason = "Filters path is not configured"
         else:
-            filters, meta = self._load_filters(filters_path, auto_refresh_days)
+            try:
+                filters, meta = self._load_filters(filters_path, auto_refresh_days)
+            except Exception as exc:
+                # A file that exists but does not parse. Every other bad
+                # input above resolves to a status rather than an exception,
+                # and callers construct this from configuration they did not
+                # write, so a corrupt file reports itself the same way.
+                logger.warning("Failed to read filters from %s: %s", filters_path, exc)
+                filters, meta = {}, {}
+                status = "error"
+                status_reason = f"Failed to read filters: {exc}"
             meta_dict = dict(meta or {}) if isinstance(meta, dict) else {}
             age_days = _filters_age_days(meta_dict, filters_path)
             stale = _is_stale(age_days, auto_refresh_days)
@@ -841,6 +857,7 @@ class QuantizerImpl:
                 cmd,
                 capture_output=True,
                 text=True,
+                timeout=_FILTERS_REFRESH_TIMEOUT_S,
             )
         except Exception as exc:
             logger.warning(
