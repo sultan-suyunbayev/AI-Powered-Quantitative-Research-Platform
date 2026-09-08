@@ -34,25 +34,29 @@ class TestParkinsonFormulaCorrectness(unittest.TestCase):
         где N = количество слагаемых в сумме (valid_bars)
         """
         # Создаем данные с известными значениями
+        # Оценка требует минимум 80% валидных баров
+        # (min_required = max(2, int(0.8 * n)) в calculate_parkinson_volatility),
+        # поэтому берём окно из 5 баров с одним пропуском: 4/5 = 80%.
         ohlc_bars = [
             {"high": 110.0, "low": 100.0},  # ln(1.1)² ≈ 0.00905
             {"high": 120.0, "low": 110.0},  # ln(1.091)² ≈ 0.00765
             {"high": 0.0, "low": 0.0},  # Невалидный
-            {"high": 0.0, "low": 0.0},  # Невалидный
             {"high": 130.0, "low": 120.0},  # ln(1.083)² ≈ 0.00638
+            {"high": 140.0, "low": 130.0},  # ln(1.077)² ≈ 0.00560
         ]
 
         n = 5  # размер окна
-        valid_bars_count = 3  # фактических наблюдений
+        valid_bars_count = 4  # фактических наблюдений
 
         result = self.calc_parkinson(ohlc_bars, n)
-        self.assertIsNotNone(result, "Должно работать с 60% валидных баров")
+        self.assertIsNotNone(result, "Должно работать с 80% валидных баров")
 
         # Вычисляем вручную с ПРАВИЛЬНОЙ формулой (valid_bars)
         sum_sq = (
             math.log(110.0 / 100.0) ** 2
             + math.log(120.0 / 110.0) ** 2
             + math.log(130.0 / 120.0) ** 2
+            + math.log(140.0 / 130.0) ** 2
         )
         expected_var_correct = sum_sq / (4 * valid_bars_count * math.log(2))
         expected_vol_correct = math.sqrt(expected_var_correct)
@@ -338,9 +342,16 @@ class TestParkinsonRealWorldScenarios(unittest.TestCase):
         # Чередуем: 5 рабочих, 2 выходных, 5 рабочих, 2 выходных
         ohlc_bars = valid_bars[:5] + weekend_bars[:2] + valid_bars[5:] + weekend_bars[2:]
 
+        # 10/14 = 71% валидных — ниже порога в 80%, оценка не выдаётся.
         result = self.calc_parkinson(ohlc_bars, 14)
-        self.assertIsNotNone(result, "При weekends (71% валидных) должно работать")
-        print(f"\n  ✓ Weekend gaps (10/14 = 71%): {result:.6f}")
+        self.assertIsNone(result, "При 71% валидных баров оценка не строится")
+
+        # 12/14 ≈ 86% — порог пройден.
+        enough = [{"high": 101.0, "low": 100.0} for _ in range(12)]
+        enough += [{"high": 0.0, "low": 0.0} for _ in range(2)]
+        result = self.calc_parkinson(enough, 14)
+        self.assertIsNotNone(result, "При 86% валидных баров оценка строится")
+        print(f"\n  ✓ Weekend gaps (12/14 = 86%): {result:.6f}")
 
     def test_crypto_24_7_no_gaps(self):
         """Криптовалюты - торговля 24/7, нет пропусков."""
