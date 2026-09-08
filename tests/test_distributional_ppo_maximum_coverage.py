@@ -52,27 +52,25 @@ from distributional_ppo import (
 
 
 # =============================================================================
-# Test _patch_rand_for_tests (lines 101-114)
+# torch.rand must stay unpatched (see docs/AUDIT_2026-09.md 9.11)
 # =============================================================================
 
 
-class TestPatchRandForTests:
-    """Tests for the _patch_rand_for_tests function."""
+class TestRandIsNotPatched:
+    """distributional_ppo used to rewrite torch.rand when pytest was imported."""
 
-    def test_rand_is_patched_in_test_environment(self):
-        """Verify torch.rand is patched during tests."""
-        # In pytest, _patch_rand_for_tests should have been called
-        assert hasattr(torch, "_distributional_rand_patch")
-        # The patch should make rand return values in [0.5, 1.0]
-        sample = torch.rand(1000)
-        assert sample.min() >= 0.0  # After patch: should be >= 0.5, but original still works
-        assert sample.max() <= 1.0
+    def test_rand_is_not_patched_under_pytest(self):
+        """The library must not change behaviour because a test runner is loaded."""
+        import distributional_ppo  # noqa: F401  -- import is the trigger under test
 
-    def test_patched_rand_produces_valid_range(self):
-        """Test that patched rand still produces valid probabilities."""
+        assert not hasattr(torch, "_distributional_rand_patch")
+
+    def test_rand_covers_the_whole_unit_interval(self):
+        """The patch clamped samples to [0.5, 1.0]; the real rand does not."""
         samples = torch.rand(100, 100)
         assert torch.all(samples >= 0.0)
         assert torch.all(samples <= 1.0)
+        assert samples.min() < 0.5
 
 
 # =============================================================================

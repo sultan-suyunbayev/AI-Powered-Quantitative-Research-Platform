@@ -848,8 +848,14 @@ class TestStrategy:
                 git_branch="main",
             )
 
-            # Build artifact
-            builder = ArtifactBuilder(builder_id="e2e_test_builder")
+            # Build artifact. sign_artifact=True above means the builder must
+            # have a key: it refuses to emit an artifact it cannot sign.
+            from ccea.crypto.keys import generate_keypair
+
+            builder = ArtifactBuilder(
+                builder_id="e2e_test_builder",
+                signing_key=generate_keypair(key_id="e2e-test-key"),
+            )
             build_result = builder.build(build_config)
 
             # Verify build success
@@ -875,8 +881,14 @@ class TestStrategy:
             registry_config = RegistryConfig(local_path=registry_path)
             publisher = ArtifactPublisher(registry_config)
 
+            # BuildResult.artifact_path is the bundle directory; publish()
+            # takes the artifact file inside it. See docs/AUDIT_2026-09.md --
+            # composing the two directly does not work.
+            artifact_file = build_result.artifact_path / "artifact.zip"
+            assert artifact_file.exists(), "Bundle must contain the packaged artifact"
+
             publish_result = publisher.publish(
-                build_result.artifact_path,
+                artifact_file,
                 build_result.manifest,
             )
 

@@ -351,10 +351,14 @@ class TestCategoricalCriticNumericalStability:
             msg="torch.clamp and addition approaches differ by more than eps/p",
         )
 
-        # And for probabilities well clear of epsilon they are identical to
-        # single-precision resolution.
+        # And for probabilities well clear of epsilon the same bound is what
+        # holds: at p > 1e-3 the two agree to eps/1e-3 = 1e-5. There is no
+        # threshold above which they agree to 1e-9 -- the gap is eps/p, not
+        # floating-point noise.
         large = probs > 1e-3
-        torch.testing.assert_close(log_probs_new[large], log_probs_old[large], rtol=1e-6, atol=1e-9)
+        torch.testing.assert_close(
+            log_probs_new[large], log_probs_old[large], rtol=0.0, atol=1.01e-5
+        )
 
     def test_torch_clamp_handles_edge_cases_better(self):
         """Test that torch.clamp handles edge cases better than addition."""

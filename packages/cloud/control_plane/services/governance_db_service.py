@@ -307,7 +307,6 @@ class GovernanceDBService:
         policy_config = {
             "workspace_id": str(policy.workspace_id),
             "primary_region": policy.primary_region.value,
-            "failover_region": policy.failover_region.value if policy.failover_region else None,
             "mode": policy.mode.name,
             "gdpr_compliant": policy.gdpr_compliant,
             "telemetry_local": policy.telemetry_local,
@@ -349,16 +348,20 @@ class GovernanceDBService:
             return None
 
         config = db_policy.config
-        policy = ResidencyPolicy(
-            workspace_id=config.get("workspace_id", str(workspace_id)),
-            primary_region=DataRegion(config.get("primary_region", "us_east")),
-            failover_region=(
-                DataRegion(config["failover_region"]) if config.get("failover_region") else None
-            ),
-            mode=ResidencyMode[config.get("mode", "CLOUD")],
-            gdpr_compliant=config.get("gdpr_compliant", False),
-            telemetry_local=config.get("telemetry_local", False),
-        )
+        policy_kwargs: Dict[str, Any] = {
+            "workspace_id": config.get("workspace_id", str(workspace_id)),
+            "primary_region": DataRegion(config.get("primary_region", "us_east")),
+            "mode": ResidencyMode[config.get("mode", "CLOUD")],
+            "gdpr_compliant": config.get("gdpr_compliant", False),
+            "telemetry_local": config.get("telemetry_local", False),
+        }
+        # allowed_regions is persisted above; restoring it here keeps a reloaded
+        # policy as wide as the one that was saved. Left out, the dataclass
+        # default silently narrowed it to us_east.
+        allowed_values = config.get("allowed_regions") or []
+        if allowed_values:
+            policy_kwargs["allowed_regions"] = {DataRegion(value) for value in allowed_values}
+        policy = ResidencyPolicy(**policy_kwargs)
 
         # Register in memory manager
         self._residency_manager._policies[str(workspace_id)] = policy

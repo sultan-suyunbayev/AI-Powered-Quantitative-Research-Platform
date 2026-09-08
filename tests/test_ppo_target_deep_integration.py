@@ -195,12 +195,14 @@ class TestPPOTargetClippingDeepIntegration:
         # V_clipped = clamp(8, 3, 7) = 7
         # loss_clipped = (7-10)^2 = 9
         # loss = max(4, 9) = 9
-        # grad = d/dV[(7-10)^2] = 2*(7-10)*1 = -6 (with clipping derivative)
         assert abs(loss_correct.item() - 9.0) < 0.01
 
-        # The gradients point in different directions!
-        assert grad_correct.item() < 0  # Correct: increase V
-        # grad_wrong would be different
+        # The max picks the clipped term, and clamp stops passing gradient once
+        # it saturates -- that is what the clip is for. So the correct formula
+        # leaves this sample with no gradient at all, while the wrong one takes
+        # its unclipped term and pushes V down by 2*(8-5) = 6.
+        assert grad_correct.item() == pytest.approx(0.0, abs=1e-6)
+        assert grad_wrong.item() == pytest.approx(6.0, abs=1e-6)
 
     def test_normalize_returns_true_path(self):
         """Test with normalize_returns=True (uses ret_mu and ret_std)."""

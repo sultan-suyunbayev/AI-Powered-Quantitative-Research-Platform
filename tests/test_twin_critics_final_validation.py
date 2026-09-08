@@ -24,13 +24,15 @@ class TestDefaultEnablementValidation:
     def test_default_value_is_true(self):
         """CRITICAL: Verify default value is True in source code."""
         import inspect
+        import re
 
         source = inspect.getsource(CustomActorCriticPolicy.__init__)
 
-        # Check that default is True
-        assert (
-            'get("use_twin_critics", True)' in source
-        ), "CRITICAL: Default value is not True in source code!"
+        # The default reaches _coerce_arch_bool as its second argument, so match
+        # the key and the default together across whatever line breaks black has
+        # put between them -- not one particular spelling of the call.
+        pattern = r'"use_twin_critics"\s*\)?\s*,\s*True'
+        assert re.search(pattern, source), "CRITICAL: Default value is not True in source code!"
 
     def test_no_config_enables_twin(self):
         """Test: No config at all -> Twin Critics enabled."""
@@ -320,8 +322,10 @@ class TestDocumentationAccuracy:
 
     def test_documentation_claims_default_true(self):
         """Verify docs say default is True."""
-        with open("/home/user/ai-quant-platform/docs/twin_critics.md", "r", encoding="utf-8") as f:
-            docs = f.read()
+        import pathlib
+
+        doc_path = pathlib.Path(__file__).resolve().parent.parent / "docs" / "twin_critics.md"
+        docs = doc_path.read_text(encoding="utf-8")
 
         # Check for key phrases
         assert (

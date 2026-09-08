@@ -190,8 +190,18 @@ class TestGovernanceDBService:
 
     @pytest.fixture
     def mock_session(self):
-        """Create mock database session."""
-        return AsyncMock()
+        """Create mock database session.
+
+        ``execute`` is awaited and its result used synchronously, so the result
+        has to be a plain mock: on an AsyncMock, ``scalar_one_or_none()`` hands
+        back a coroutine, which the service then treats as a loaded row.
+        """
+        session = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+        result.scalars.return_value.all.return_value = []
+        session.execute.return_value = result
+        return session
 
     @pytest.mark.asyncio
     async def test_create_residency_policy(self, mock_session):

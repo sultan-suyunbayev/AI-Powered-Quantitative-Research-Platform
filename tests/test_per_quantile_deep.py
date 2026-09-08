@@ -316,13 +316,17 @@ class TestPerQuantileCategoricalSpecific:
             assert torch.all(atoms_i >= clip_min - 1e-6), f"Sample {i}: atoms below {clip_min}"
             assert torch.all(atoms_i <= clip_max + 1e-6), f"Sample {i}: atoms above {clip_max}"
 
-            # Check specific values
+            # Clipping can only pull atoms inside the window, never extend the
+            # grid to reach its edges: with old_value = 10 and delta = 5 the
+            # window is [5, 15] while the grid stops at 10.
+            expected_min = max(atoms.min().item(), clip_min)
+            expected_max = min(atoms.max().item(), clip_max)
             assert atoms_i.min().item() == pytest.approx(
-                clip_min, abs=1e-5
-            ), f"Sample {i}: min atom should be {clip_min}"
+                expected_min, abs=1e-5
+            ), f"Sample {i}: min atom should be {expected_min}"
             assert atoms_i.max().item() == pytest.approx(
-                clip_max, abs=1e-5
-            ), f"Sample {i}: max atom should be {clip_max}"
+                expected_max, abs=1e-5
+            ), f"Sample {i}: max atom should be {expected_max}"
 
         print("✓ Categorical atoms clipped per-sample correctly")
 
