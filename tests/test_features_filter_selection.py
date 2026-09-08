@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import pandas as pd
 import pytest
 
@@ -25,7 +26,7 @@ def test_selected_features_filtering(tmp_path):
     # 2. Run make_features.py via subprocess with selected features
     # Note: price_col="close", open_col="open", high_col="high", low_col="low", volume_col="volume"
     cmd = [
-        ".venv/bin/python",
+        sys.executable,
         "make_features.py",
         "--in",
         str(in_path),
@@ -103,7 +104,7 @@ def test_options_occ_grouping_and_greeks(tmp_path):
 
     # 2. Run make_features.py with selected features: delta, sma_480
     cmd = [
-        ".venv/bin/python",
+        sys.executable,
         "make_features.py",
         "--in",
         str(in_path),
