@@ -2,7 +2,7 @@
 Tests for technical indicators integration in observation vector.
 
 This test suite verifies that:
-1. Observation vector has correct size (63 features, was 56, expanded by 6 validity flags)
+1. Observation vector has the size the layout declares (feature_config.N_FEATURES)
 2. Technical indicators populate the observation (not all zeros)
 3. cvd_24h, garch_7d, yang_zhang_48h appear in obs (обновлено для 4h таймфрейма)
 4. Works in training mode
@@ -310,42 +310,49 @@ class MockMediator:
         max_num_tokens = _MAX_TOKENS
         num_tokens = _MAX_TOKENS
 
-        try:
-            build_observation_vector(
-                float(market_data["price"]),
-                float(market_data["prev_price"]),
-                float(market_data["log_volume_norm"]),
-                float(market_data["rel_volume"]),
-                float(indicators["ma5"]),
-                float(indicators["ma20"]),
-                float(indicators["rsi14"]),
-                float(indicators["macd"]),
-                float(indicators["macd_signal"]),
-                float(indicators["momentum"]),
-                float(indicators["atr"]),
-                float(indicators["cci"]),
-                float(indicators["obv"]),
-                float(indicators["bb_lower"]),
-                float(indicators["bb_upper"]),
-                float(is_high_importance),
-                float(time_since_event),
-                float(fear_greed_value),
-                bool(has_fear_greed),
-                bool(risk_off_flag),
-                float(cash),
-                float(units),
-                float(last_vol_imbalance),
-                float(last_trade_intensity),
-                float(last_realized_spread),
-                float(last_agent_fill_ratio),
-                int(token_id),
-                int(max_num_tokens),
-                int(num_tokens),
-                norm_cols_values,
-                obs,
-            )
-        except Exception:
-            return np.zeros(obs_shape, dtype=np.float32)
+        signal_pos = self._coerce_finite(getattr(state, "signal_pos", 0.0), default=0.0)
+        norm_cols_validity = np.ones(len(norm_cols_values), dtype=np.uint8)
+
+        # Named arguments, and no blanket except: the signature has grown
+        # (signal_pos, norm_cols_validity, enable_validity_flags) and a
+        # positional call used to raise TypeError into a handler that returned
+        # a zero vector, so the tests asserted on zeros instead of failing.
+        build_observation_vector(
+            price=float(market_data["price"]),
+            prev_price=float(market_data["prev_price"]),
+            log_volume_norm=float(market_data["log_volume_norm"]),
+            rel_volume=float(market_data["rel_volume"]),
+            ma5=float(indicators["ma5"]),
+            ma20=float(indicators["ma20"]),
+            rsi14=float(indicators["rsi14"]),
+            macd=float(indicators["macd"]),
+            macd_signal=float(indicators["macd_signal"]),
+            momentum=float(indicators["momentum"]),
+            atr=float(indicators["atr"]),
+            cci=float(indicators["cci"]),
+            obv=float(indicators["obv"]),
+            bb_lower=float(indicators["bb_lower"]),
+            bb_upper=float(indicators["bb_upper"]),
+            is_high_importance=float(is_high_importance),
+            time_since_event=float(time_since_event),
+            fear_greed_value=float(fear_greed_value),
+            has_fear_greed=bool(has_fear_greed),
+            risk_off_flag=bool(risk_off_flag),
+            cash=float(cash),
+            units=float(units),
+            signal_pos=float(signal_pos),
+            last_vol_imbalance=float(last_vol_imbalance),
+            last_trade_intensity=float(last_trade_intensity),
+            last_realized_spread=float(last_realized_spread),
+            last_agent_fill_ratio=float(last_agent_fill_ratio),
+            token_id=int(token_id),
+            max_num_tokens=int(max_num_tokens),
+            num_tokens=int(num_tokens),
+            norm_cols_values=norm_cols_values,
+            norm_cols_validity=norm_cols_validity,
+            enable_validity_flags=True,
+            out_features=obs,
+        )
 
         return obs
 
@@ -384,7 +391,7 @@ def test_observation_size_and_non_zero():
         }
     )
 
-    env = MockEnv(df=df, obs_size=43)
+    env = MockEnv(df=df, obs_size=_N_FEATURES)
     mediator = MockMediator(env)
 
     row = df.iloc[100]
@@ -432,7 +439,7 @@ def test_technical_indicators_present():
         }
     )
 
-    env = MockEnv(df=df, obs_size=43)
+    env = MockEnv(df=df, obs_size=_N_FEATURES)
     mediator = MockMediator(env)
 
     row = df.iloc[0]
@@ -447,8 +454,9 @@ def test_technical_indicators_present():
     # The first value should be price
     assert obs[0] > 0, f"obs[0] should be price, got {obs[0]}"
 
-    # Check norm_cols positions (32-39 typically contain cvd, garch, yang_zhang)
-    norm_cols_region = obs[32:40]
+    # The first external columns carry cvd, yang_zhang, garch and the returns.
+    ext_start = _block_start("external")
+    norm_cols_region = obs[ext_start : ext_start + 8]
     non_zero_norm_cols = np.count_nonzero(norm_cols_region)
     assert non_zero_norm_cols >= 4, f"Expected >=4 non-zero norm_cols, got {non_zero_norm_cols}"
 
@@ -483,7 +491,7 @@ def test_cvd_garch_yangzhang_in_obs():
         }
     )
 
-    env = MockEnv(df=df, obs_size=43)
+    env = MockEnv(df=df, obs_size=_N_FEATURES)
     mediator = MockMediator(env)
 
     row = df.iloc[0]
@@ -543,7 +551,7 @@ def test_observations_in_training_env():
         }
     )
 
-    env = MockEnv(df=df, obs_size=43)
+    env = MockEnv(df=df, obs_size=_N_FEATURES)
     mediator = MockMediator(env)
 
     # Test multiple steps
@@ -580,7 +588,7 @@ def test_observation_works_without_indicators():
         }
     )
 
-    env = MockEnv(df=df, obs_size=43)
+    env = MockEnv(df=df, obs_size=_N_FEATURES)
     mediator = MockMediator(env)
 
     row = df.iloc[0]
