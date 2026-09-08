@@ -35,6 +35,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+from uuid import uuid4
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -152,8 +153,14 @@ class DocumentationSection:
     Represents one of the required sections per Annex IV.
     """
 
+    # The timestamp keeps ids sortable; the suffix keeps them unique. Sections
+    # are stored in a dict by this id, and generate_all() writes six of them in
+    # a row -- on a host whose clock does not tick between the calls, a pure
+    # timestamp collides and the later sections overwrite the earlier ones.
     section_id: str = field(
-        default_factory=lambda: f"SEC-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+        default_factory=lambda: (
+            f"SEC-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}-{uuid4().hex[:8]}"
+        )
     )
     section_type: str = DocumentationSectionType.GENERAL_DESCRIPTION.value
     title: str = ""

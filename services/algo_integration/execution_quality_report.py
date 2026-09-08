@@ -449,7 +449,9 @@ class ExecutionQualityReportGenerator:
         Returns:
             ExecutionQualityReport for the period
         """
-        start_time = time.time()
+        # perf_counter, not time(): the wall clock advances in ~15.6 ms
+        # steps on Windows, so a fast report measured as exactly 0.0 ms.
+        start_time = time.perf_counter()
 
         # Calculate period dates
         if end_date is None:
@@ -512,7 +514,7 @@ class ExecutionQualityReportGenerator:
         report.executive_summary = self._generate_executive_summary(report)
 
         # Finalize
-        report.metadata.generation_duration_ms = (time.time() - start_time) * 1000
+        report.metadata.generation_duration_ms = (time.perf_counter() - start_time) * 1000
         report.metadata.report_hash = report.compute_hash()
         report.metadata.status = ReportStatus.GENERATED
 

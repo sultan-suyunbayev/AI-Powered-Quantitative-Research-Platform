@@ -196,7 +196,10 @@ class TestBug8TimeLimitBootstrapFreshStates:
                 value = self.value_head(lstm_out[:, -1, :])  # Use last timestep
                 return value, new_states
 
-        # Initialize predictor
+        # Initialize predictor. The demonstration compares two outputs of a
+        # randomly initialised LSTM and asserts they differ; seed it so the
+        # margin does not depend on which weights came up.
+        torch.manual_seed(0)
         obs_dim = 4
         hidden_dim = 16
         predictor = SimpleLSTMValuePredictor(obs_dim, hidden_dim)

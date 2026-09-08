@@ -37,7 +37,7 @@ import time
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import (
@@ -63,6 +63,20 @@ from services.core.risk_controls.audit_models import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _epoch_ns(moment: datetime) -> int:
+    """Nanoseconds since the epoch for a query bound.
+
+    Records carry ``time.time_ns()``, which is UTC. Bounds arrive as naive
+    ``datetime.utcnow()`` values, and ``datetime.timestamp()`` reads a naive
+    value as *local* time -- so a plain conversion shifted every range query by
+    the host's UTC offset, and west of UTC an epoch bound fell before 1970 in
+    local terms, which raises OSError on Windows.
+    """
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return int(moment.timestamp() * 1e9)
 
 
 class StorageBackendType(Enum):
@@ -206,8 +220,9 @@ class AuditStorageBackend(ABC):
         Read records within a time range.
 
         Args:
-            start_time: Start of time range.
-            end_time: End of time range.
+            start_time: Start of time range. A naive datetime is read as UTC,
+                to match the ``time.time_ns()`` stamps on the records.
+            end_time: End of time range, same convention.
             event_types: Filter by event types (None = all).
             limit: Maximum records to return.
             offset: Number of records to skip.
@@ -425,8 +440,8 @@ class MemoryAuditStorage(AuditStorageBackend):
     ) -> List[AuditRecord]:
         """Read records in time range."""
         with self._lock:
-            start_ns = int(start_time.timestamp() * 1e9)
-            end_ns = int(end_time.timestamp() * 1e9)
+            start_ns = _epoch_ns(start_time)
+            end_ns = _epoch_ns(end_time)
 
             results = []
             for record in self._records:
@@ -458,8 +473,8 @@ class MemoryAuditStorage(AuditStorageBackend):
             records = self._records_by_algorithm.get(algorithm_id, [])
 
             if start_time or end_time:
-                start_ns = int(start_time.timestamp() * 1e9) if start_time else 0
-                end_ns = int(end_time.timestamp() * 1e9) if end_time else time.time_ns()
+                start_ns = _epoch_ns(start_time) if start_time else 0
+                end_ns = _epoch_ns(end_time) if end_time else time.time_ns()
 
                 records = [r for r in records if start_ns <= r.event_timestamp_ns <= end_ns]
 
@@ -479,8 +494,8 @@ class MemoryAuditStorage(AuditStorageBackend):
                 return len(self._records)
 
             count = 0
-            start_ns = int(start_time.timestamp() * 1e9) if start_time else 0
-            end_ns = int(end_time.timestamp() * 1e9) if end_time else time.time_ns()
+            start_ns = _epoch_ns(start_time) if start_time else 0
+            end_ns = _epoch_ns(end_time) if end_time else time.time_ns()
 
             for record in self._records:
                 if start_ns <= record.event_timestamp_ns <= end_ns:
@@ -513,11 +528,11 @@ class MemoryAuditStorage(AuditStorageBackend):
             for i, record in enumerate(self._records):
                 # Apply time filters
                 if start_time:
-                    start_ns = int(start_time.timestamp() * 1e9)
+                    start_ns = _epoch_ns(start_time)
                     if record.event_timestamp_ns < start_ns:
                         continue
                 if end_time:
-                    end_ns = int(end_time.timestamp() * 1e9)
+                    end_ns = _epoch_ns(end_time)
                     if record.event_timestamp_ns > end_ns:
                         break
 
@@ -561,14 +576,8 @@ class MemoryAuditStorage(AuditStorageBackend):
             try:
                 # Get matching records
                 records = []
-                start_ns = (
-                    int(request.start_datetime.timestamp() * 1e9) if request.start_datetime else 0
-                )
-                end_ns = (
-                    int(request.end_datetime.timestamp() * 1e9)
-                    if request.end_datetime
-                    else time.time_ns()
-                )
+                start_ns = _epoch_ns(request.start_datetime) if request.start_datetime else 0
+                end_ns = _epoch_ns(request.end_datetime) if request.end_datetime else time.time_ns()
 
                 for record in self._records:
                     if start_ns <= record.event_timestamp_ns <= end_ns:
@@ -1023,8 +1032,8 @@ class SQLiteAuditStorage(AuditStorageBackend):
         try:
             cursor = conn.cursor()
 
-            start_ns = int(start_time.timestamp() * 1e9)
-            end_ns = int(end_time.timestamp() * 1e9)
+            start_ns = _epoch_ns(start_time)
+            end_ns = _epoch_ns(end_time)
 
             if event_types:
                 event_type_values = [et.value for et in event_types]
@@ -1103,8 +1112,8 @@ class SQLiteAuditStorage(AuditStorageBackend):
             cursor = conn.cursor()
 
             if start_time and end_time:
-                start_ns = int(start_time.timestamp() * 1e9)
-                end_ns = int(end_time.timestamp() * 1e9)
+                start_ns = _epoch_ns(start_time)
+                end_ns = _epoch_ns(end_time)
                 cursor.execute(
                     f"""
                     SELECT * FROM {self._table_name}
@@ -1155,10 +1164,10 @@ class SQLiteAuditStorage(AuditStorageBackend):
 
             if start_time:
                 conditions.append("event_timestamp_ns >= ?")
-                params.append(int(start_time.timestamp() * 1e9))
+                params.append(_epoch_ns(start_time))
             if end_time:
                 conditions.append("event_timestamp_ns <= ?")
-                params.append(int(end_time.timestamp() * 1e9))
+                params.append(_epoch_ns(end_time))
             if event_types:
                 placeholders = ",".join("?" * len(event_types))
                 conditions.append(f"event_type IN ({placeholders})")
@@ -1217,10 +1226,10 @@ class SQLiteAuditStorage(AuditStorageBackend):
 
             if start_time:
                 conditions.append("event_timestamp_ns >= ?")
-                params.append(int(start_time.timestamp() * 1e9))
+                params.append(_epoch_ns(start_time))
             if end_time:
                 conditions.append("event_timestamp_ns <= ?")
-                params.append(int(end_time.timestamp() * 1e9))
+                params.append(_epoch_ns(end_time))
 
             where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
 
@@ -1294,10 +1303,10 @@ class SQLiteAuditStorage(AuditStorageBackend):
 
             if request.start_datetime:
                 conditions.append("event_timestamp_ns >= ?")
-                params.append(int(request.start_datetime.timestamp() * 1e9))
+                params.append(_epoch_ns(request.start_datetime))
             if request.end_datetime:
                 conditions.append("event_timestamp_ns <= ?")
-                params.append(int(request.end_datetime.timestamp() * 1e9))
+                params.append(_epoch_ns(request.end_datetime))
             if request.event_types:
                 placeholders = ",".join("?" * len(request.event_types))
                 conditions.append(f"event_type IN ({placeholders})")
@@ -1560,8 +1569,8 @@ class FileAuditStorage(AuditStorageBackend):
         offset: int = 0,
     ) -> List[AuditRecord]:
         """Read records in time range."""
-        start_ns = int(start_time.timestamp() * 1e9)
-        end_ns = int(end_time.timestamp() * 1e9)
+        start_ns = _epoch_ns(start_time)
+        end_ns = _epoch_ns(end_time)
 
         results = []
         skipped = 0
@@ -1599,8 +1608,8 @@ class FileAuditStorage(AuditStorageBackend):
         end_time: Optional[datetime] = None,
     ) -> List[AuditRecord]:
         """Read records for an algorithm."""
-        start_ns = int(start_time.timestamp() * 1e9) if start_time else 0
-        end_ns = int(end_time.timestamp() * 1e9) if end_time else time.time_ns()
+        start_ns = _epoch_ns(start_time) if start_time else 0
+        end_ns = _epoch_ns(end_time) if end_time else time.time_ns()
 
         results = []
         for record in self._iter_records():
@@ -1619,8 +1628,8 @@ class FileAuditStorage(AuditStorageBackend):
         event_types: Optional[List[AuditEventType]] = None,
     ) -> int:
         """Count matching records."""
-        start_ns = int(start_time.timestamp() * 1e9) if start_time else 0
-        end_ns = int(end_time.timestamp() * 1e9) if end_time else time.time_ns()
+        start_ns = _epoch_ns(start_time) if start_time else 0
+        end_ns = _epoch_ns(end_time) if end_time else time.time_ns()
 
         count = 0
         for record in self._iter_records():
@@ -1649,8 +1658,8 @@ class FileAuditStorage(AuditStorageBackend):
         batch_size: int = 1000,
     ) -> AuditChainStatus:
         """Verify chain integrity."""
-        start_ns = int(start_time.timestamp() * 1e9) if start_time else 0
-        end_ns = int(end_time.timestamp() * 1e9) if end_time else time.time_ns()
+        start_ns = _epoch_ns(start_time) if start_time else 0
+        end_ns = _epoch_ns(end_time) if end_time else time.time_ns()
 
         records_checked = 0
         previous_hash = None

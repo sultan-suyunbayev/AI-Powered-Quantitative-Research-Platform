@@ -1,9 +1,14 @@
 import json
+from importlib.machinery import EXTENSION_SUFFIXES
 from pathlib import Path
 
 import pytest
 
 from tools.verify_hash_report import compute_sha256, validate_report
+
+# find_built_artifacts scans for the suffixes this interpreter would import, so a
+# fixture file has to carry one of them: ".pyd" on Windows, ".so" on Linux.
+NATIVE_SUFFIX = EXTENSION_SUFFIXES[-1]
 
 
 def _write_report(tmp_path: Path, artifact: Path, sha: str, python_version: str = "3.12.1") -> Path:
@@ -60,12 +65,12 @@ def test_validate_report_requires_python_312(tmp_path: Path) -> None:
 
 
 def test_validate_report_flags_missing_artifact(tmp_path: Path) -> None:
-    artifact = tmp_path / "example.pyd"
+    artifact = tmp_path / f"example{NATIVE_SUFFIX}"
     artifact.write_bytes(b"artifact-bytes")
     sha = compute_sha256(artifact)
     report_path = _write_report(tmp_path, artifact, sha)
 
-    extra = tmp_path / "untracked.pyd"
+    extra = tmp_path / f"untracked{NATIVE_SUFFIX}"
     extra.write_bytes(b"extra-bytes")
 
     with pytest.raises(ValueError):

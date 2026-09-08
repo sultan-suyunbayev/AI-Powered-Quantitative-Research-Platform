@@ -757,17 +757,23 @@ class TestPerformance:
 
             scheduler = PBTScheduler(config, seed=42)
 
-            start = time.time()
+            # perf_counter, not time(): the wall clock ticks in ~15.6 ms steps
+            # on Windows, so each of these read 0.0 and the ratio below became
+            # 0 < 0.
+            start = time.perf_counter()
             population = scheduler.initialize_population()
 
             for member in population:
                 scheduler.update_performance(member, 0.5, 1)
 
-            elapsed = time.time() - start
+            elapsed = time.perf_counter() - start
             times.append(elapsed)
 
-        # Time should scale roughly linearly (not exponentially)
-        assert times[-1] < times[0] * 20, "PBT scaling is not linear"
+        # Time should scale roughly linearly (not exponentially). The smallest
+        # population is quick enough that its measurement is mostly overhead, so
+        # compare against a floor rather than against zero.
+        baseline = max(times[0], 1e-4)
+        assert times[-1] < baseline * 20, "PBT scaling is not linear"
 
 
 class TestDefaultsComprehensive:

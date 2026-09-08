@@ -233,8 +233,8 @@ class TestMemoryAuditStorage:
         for record in sample_records:
             memory_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         results = memory_storage.read_range(start, end)
 
@@ -261,8 +261,8 @@ class TestMemoryAuditStorage:
         memory_storage.append(submitted)
         memory_storage.append(filled)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         # Filter by event type
         results = memory_storage.read_range(
@@ -279,8 +279,8 @@ class TestMemoryAuditStorage:
         for record in sample_records:
             memory_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         # First page
         page1 = memory_storage.read_range(start, end, limit=5, offset=0)
@@ -314,8 +314,8 @@ class TestMemoryAuditStorage:
         for record in sample_records:
             memory_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         results = memory_storage.read_by_algorithm_id("algo-001", start, end)
         assert len(results) == len(sample_records)
@@ -333,8 +333,8 @@ class TestMemoryAuditStorage:
         for record in sample_records:
             memory_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         count = memory_storage.count(start_time=start, end_time=end)
         assert count == len(sample_records)
@@ -384,8 +384,8 @@ class TestMemoryAuditStorage:
         for record in sample_records:
             memory_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         status = memory_storage.verify_chain(start, end)
 
@@ -397,8 +397,8 @@ class TestMemoryAuditStorage:
             memory_storage.append(record)
 
         request = AuditExportRequest(
-            start_datetime=datetime.now() - timedelta(hours=1),
-            end_datetime=datetime.now() + timedelta(hours=1),
+            start_datetime=datetime.utcnow() - timedelta(hours=1),
+            end_datetime=datetime.utcnow() + timedelta(hours=1),
             include_chain_verification=True,
         )
 
@@ -414,8 +414,8 @@ class TestMemoryAuditStorage:
             memory_storage.append(record)
 
         request = AuditExportRequest(
-            start_datetime=datetime.now() - timedelta(hours=1),
-            end_datetime=datetime.now() + timedelta(hours=1),
+            start_datetime=datetime.utcnow() - timedelta(hours=1),
+            end_datetime=datetime.utcnow() + timedelta(hours=1),
             event_types=[AuditEventType.ORDER_SUBMITTED],
             order_ids=["order-001"],
         )
@@ -503,8 +503,8 @@ class TestSQLiteAuditStorage:
         for record in sample_records:
             sqlite_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         results = sqlite_storage.read_range(start, end)
 
@@ -547,8 +547,8 @@ class TestSQLiteAuditStorage:
         sqlite_storage.config.backup_path = str(tmp_path / "exports")
 
         request = AuditExportRequest(
-            start_datetime=datetime.now() - timedelta(hours=1),
-            end_datetime=datetime.now() + timedelta(hours=1),
+            start_datetime=datetime.utcnow() - timedelta(hours=1),
+            end_datetime=datetime.utcnow() + timedelta(hours=1),
             include_chain_verification=True,
         )
 
@@ -611,8 +611,8 @@ class TestFileAuditStorage:
         for record in sample_records:
             file_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         results = file_storage.read_range(start, end)
 
@@ -643,8 +643,8 @@ class TestFileAuditStorage:
             file_storage.append(record)
 
         request = AuditExportRequest(
-            start_datetime=datetime.now() - timedelta(hours=1),
-            end_datetime=datetime.now() + timedelta(hours=1),
+            start_datetime=datetime.utcnow() - timedelta(hours=1),
+            end_datetime=datetime.utcnow() + timedelta(hours=1),
             include_chain_verification=True,
         )
 
@@ -734,8 +734,8 @@ class TestChainIntegrity:
             storage.append(record)
 
         # Read all records
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
         records = storage.read_range(start, end)
 
         # Verify chain

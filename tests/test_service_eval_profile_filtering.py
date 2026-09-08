@@ -1,4 +1,5 @@
 import json
+import pathlib
 from textwrap import dedent
 
 import pandas as pd
@@ -45,13 +46,20 @@ def _write_profiled_logs(tmp_path):
 
 def _write_config(tmp_path, trades_path, equity_path):
     cfg_path = tmp_path / "config.yaml"
+    # A Windows path inside a double-quoted YAML scalar is a string of escape
+    # sequences, so the scanner reads the backslash before Users as the start
+    # of a unicode escape. Forward slashes work on every platform.
+    trades_path = pathlib.Path(trades_path).as_posix()
+    equity_path = pathlib.Path(equity_path).as_posix()
+    logs_dir = (pathlib.Path(tmp_path) / "logs").as_posix()
+    artifacts_dir = (pathlib.Path(tmp_path) / "artifacts").as_posix()
     cfg_path.write_text(
         dedent(
             f"""
             mode: eval
             run_id: test-run
-            logs_dir: "{tmp_path / 'logs'}"
-            artifacts_dir: "{tmp_path / 'artifacts'}"
+            logs_dir: "{logs_dir}"
+            artifacts_dir: "{artifacts_dir}"
             execution_profile: MKT_OPEN_NEXT_H1
             components:
               market_data:
@@ -73,7 +81,11 @@ def _write_config(tmp_path, trades_path, equity_path):
               trades_path: "{trades_path}"
               equity_path: "{equity_path}"
             """
-        ).strip()
+        ).strip(),
+        # load_config reads UTF-8; without this, write_text uses the locale's
+        # encoding (cp1251 on a Russian Windows install) and the config comes
+        # back undecodable.
+        encoding="utf-8",
     )
     return cfg_path
 

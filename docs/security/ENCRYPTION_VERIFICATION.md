@@ -167,7 +167,7 @@ session = httpx.Client(
 **Implementation**:
 
 - Ed25519 for artifact signing
-- Keys stored in secure vault (HSM planned for production)
+- The artifact-signing private key is held in a secrets manager (HSM planned for production). No customer exchange credentials reach the cloud: those stay in the customer-hosted Agent.
 
 **Status**: Implemented (HSM is roadmap item)
 

@@ -1427,7 +1427,9 @@ class RestBudgetSession:
                         "binance_weights": {},
                         "cache_hit": True,
                         "endpoint": key,
-                        "budget": override,
+                        # The budget the request was charged to, not the endpoint
+                        # override -- "endpoint" above already carries that one.
+                        "budget": budget,
                         "tokens": float(tokens),
                     }
                 )
@@ -1504,7 +1506,7 @@ class RestBudgetSession:
                 "binance_weights": self._extract_binance_weights(response_headers),
                 "cache_hit": False,
                 "endpoint": key,
-                "budget": override,
+                "budget": budget,
                 "tokens": float(tokens),
                 "status": status,
                 "retry_after": retry_after,

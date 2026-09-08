@@ -255,7 +255,9 @@ class TestValidityFlags:
         """Simulate early bars where all indicators are NaN."""
         build_observation_vector = get_obs_builder
 
-        # Bar 1: Nothing is ready
+        # Bar 1: Nothing is ready. atr belongs in this list -- the assertion
+        # loop below covers atr_valid, and leaving atr at its real value left
+        # that one flag set while every other one was cleared.
         params = create_base_params()
         params.update(
             {
@@ -265,6 +267,7 @@ class TestValidityFlags:
                 "macd": np.nan,
                 "macd_signal": np.nan,
                 "momentum": np.nan,
+                "atr": np.nan,
                 "cci": np.nan,
                 "obv": np.nan,
             }

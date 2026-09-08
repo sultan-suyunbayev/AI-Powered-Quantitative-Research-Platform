@@ -47,7 +47,14 @@ def atomic_write_with_retry(
     for attempt in range(retries + 1):
         try:
             if data is None:
-                fd = os.open(str(p), os.O_RDONLY)
+                # Windows' _commit() requires a writable handle: fsync on an
+                # O_RDONLY descriptor raises EBADF there, so every durable flush
+                # of an existing file failed on Windows. POSIX accepts either,
+                # and the read-only fallback keeps a read-only file flushable.
+                try:
+                    fd = os.open(str(p), os.O_RDWR)
+                except OSError:
+                    fd = os.open(str(p), os.O_RDONLY)
                 try:
                     os.fsync(fd)
                 finally:

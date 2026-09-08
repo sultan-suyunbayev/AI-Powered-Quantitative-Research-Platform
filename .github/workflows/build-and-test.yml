@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main, master, develop]
 
+# The whole suite on two platforms is most of an hour of runner time. Without
+# this, pushing three times in an hour queues three of them and the newest waits
+# behind runs whose result nobody wants.
+concurrency:
+  group: build-and-test-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build, verify hash, and test (${{ matrix.os }})
