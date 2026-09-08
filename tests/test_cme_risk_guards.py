@@ -932,7 +932,9 @@ class TestSettlementRiskGuard:
         # Use a timestamp far from settlement time
         result = guard.check_settlement_risk(
             symbol="ES",
-            timestamp_ms=int(datetime(2025, 1, 15, 14, 0).timestamp() * 1000),  # 2 PM UTC
+            timestamp_ms=int(
+                datetime(2025, 1, 15, 14, 0, tzinfo=timezone.utc).timestamp() * 1000
+            ),  # 2 PM UTC
         )
         # Should be some level based on time distance
         assert result.settlement_time is not None
@@ -1513,7 +1515,7 @@ class TestIntegrationScenarios:
         # Positions: 5 ES (~$1.1M notional) + 3 NQ (~$0.9M notional) = ~$2M
         # At 5% margin: ~$100K required
         # Use $500K equity to ensure healthy margin
-        morning_ts = int(datetime(2025, 1, 15, 10, 0).timestamp() * 1000)
+        morning_ts = int(datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)
         event1 = guard.check_trade(
             symbol="ES",
             side="LONG",
@@ -1768,7 +1770,7 @@ class TestAdditionalEdgeCases:
         """Test settlement risk calculation crossing midnight."""
         guard = SettlementRiskGuard()
         # Late night UTC time
-        late_night_ts = int(datetime(2025, 1, 15, 23, 0).timestamp() * 1000)
+        late_night_ts = int(datetime(2025, 1, 15, 23, 0, tzinfo=timezone.utc).timestamp() * 1000)
         result = guard.check_settlement_risk(
             symbol="ES",
             timestamp_ms=late_night_ts,
@@ -1899,7 +1901,7 @@ class TestAdditionalEdgeCases:
         """Test settlement calculation when settlement is tomorrow."""
         guard = SettlementRiskGuard()
         # Late in day (23:00 UTC), settlement is next day
-        late_ts = int(datetime(2025, 1, 15, 23, 30).timestamp() * 1000)
+        late_ts = int(datetime(2025, 1, 15, 23, 30, tzinfo=timezone.utc).timestamp() * 1000)
         result = guard.check_settlement_risk(
             symbol="ES",
             timestamp_ms=late_ts,
@@ -2262,7 +2264,7 @@ class TestAdditionalEdgeCases:
         )
         # Set timestamp to 23:00 UTC (after typical settlements)
         # ES settles at 15:30 ET = 20:30 UTC
-        late_ts = int(datetime(2025, 6, 15, 23, 0).timestamp() * 1000)
+        late_ts = int(datetime(2025, 6, 15, 23, 0, tzinfo=timezone.utc).timestamp() * 1000)
         result = guard.check_settlement_risk(
             symbol="ES",
             timestamp_ms=late_ts,
@@ -2289,7 +2291,9 @@ class TestAdditionalEdgeCases:
             # This should trigger APPROACHING level
             result = guard.check_settlement_risk(
                 symbol="ES",
-                timestamp_ms=int(datetime(2025, 6, 15, 19, 0).timestamp() * 1000),
+                timestamp_ms=int(
+                    datetime(2025, 6, 15, 19, 0, tzinfo=timezone.utc).timestamp() * 1000
+                ),
             )
             # Result should be valid
             assert result.risk_level in list(SettlementRiskLevel)
