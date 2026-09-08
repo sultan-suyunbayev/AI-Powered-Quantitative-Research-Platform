@@ -219,14 +219,17 @@ class TestWinsorization_AllNaNColumns:
         assert z_col in result.columns
         z_values = result[z_col]
 
-        # NaN positions should be preserved
-        original_nan_mask = df_with_all_nan["partial_nan_col"].isna()
+        # The pipeline shifts each symbol's series by one bar before
+        # normalising (that is what keeps a bar out of its own statistics), so
+        # the NaN positions move with it: the first row becomes NaN and every
+        # original gap lands one row later.
+        shifted_nan_mask = df_with_all_nan["partial_nan_col"].shift(1).isna()
         result_nan_mask = z_values.isna()
         pd.testing.assert_series_equal(
-            original_nan_mask,
+            shifted_nan_mask,
             result_nan_mask,
             check_names=False,
-            obj="NaN positions should be preserved",
+            obj="NaN positions should follow the per-symbol shift",
         )
 
         # Non-NaN values should be z-scored
