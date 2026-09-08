@@ -9,6 +9,8 @@ Reference: CRITICAL_BUGS_ANALYSIS_2025_11_23.md
 
 import numpy as np
 import pandas as pd
+import pathlib
+
 import pytest
 
 
@@ -317,29 +319,19 @@ def test_both_fixes_are_present():
 
 
 def test_documentation_exists():
+    """The living record of findings is present.
+
+    This used to look for two dated bug-analysis reports under archive/. That
+    directory was removed for the public release -- it held generated reports,
+    not maintained documentation -- so the check points at the audit, which is
+    where findings are recorded now.
     """
-    Verify that documentation for fixes exists.
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    audit = repo_root / "docs" / "AUDIT_2026-09.md"
+    assert audit.exists(), f"Audit document not found at {audit}"
 
-    Note: Documentation files have been moved to archive as part of project
-    reorganization (2025-11-25). Test updated to check correct archive paths.
-    """
-    import os
-
-    # Check for analysis report (moved to archive 2025-11-25)
-    analysis_paths = [
-        "CRITICAL_BUGS_ANALYSIS_2025_11_23.md",  # Original location
-        "docs/archive/verification_2025_11/bug_analysis/CRITICAL_BUGS_ANALYSIS_2025_11_23.md",  # Archive
-    ]
-    analysis_exists = any(os.path.exists(p) for p in analysis_paths)
-    assert analysis_exists, f"Analysis report not found in any of: {analysis_paths}"
-
-    # Check for implementation report (moved to archive 2025-11-25)
-    impl_paths = [
-        "CRITICAL_BUGS_FIX_IMPLEMENTATION_REPORT_2025_11_23.md",  # Original location
-        "docs/archive/verification_2025_11/implementation/CRITICAL_BUGS_FIX_IMPLEMENTATION_REPORT_2025_11_23.md",  # Archive
-    ]
-    impl_exists = any(os.path.exists(p) for p in impl_paths)
-    assert impl_exists, f"Implementation report not found in any of: {impl_paths}"
+    text = audit.read_text(encoding="utf-8")
+    assert "Still open" in text, "The audit must keep an open-issues section"
 
     print("[OK] Documentation exists for all fixes!")
 

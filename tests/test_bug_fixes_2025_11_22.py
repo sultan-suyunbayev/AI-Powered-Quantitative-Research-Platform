@@ -61,11 +61,15 @@ class TestSAPPOEpsilonSchedule:
             model=MockModel(),
         )
 
-        # Verify epsilon progresses correctly with hardcoded max_updates=1000
+        # __init__ derives the annealing horizon from the run configuration, so
+        # take it from the instance rather than assuming 1000.
+        max_updates = sa_ppo._max_updates
+        assert max_updates > 0
+
         test_cases = [
             (0, 0.10),  # 0% progress: epsilon_init
-            (500, 0.075),  # 50% progress: (0.1 + 0.05) / 2
-            (1000, 0.05),  # 100% progress: epsilon_final
+            (max_updates // 2, 0.075),  # 50% progress: (0.1 + 0.05) / 2
+            (max_updates, 0.05),  # 100% progress: epsilon_final
         ]
 
         for update_count, expected_epsilon in test_cases:
@@ -78,7 +82,6 @@ class TestSAPPOEpsilonSchedule:
 
     def test_epsilon_schedule_linear_progression(self):
         """Verify linear epsilon schedule progresses correctly."""
-        # NOTE: This test verifies linear interpolation with hardcoded max_updates=1000
         config = SAPPOConfig(
             enabled=True,
             adaptive_epsilon=True,
@@ -99,14 +102,15 @@ class TestSAPPOEpsilonSchedule:
 
         sa_ppo = StateAdversarialPPO(config=config, model=MockModel())
 
-        # Test epsilon at different progress points (hardcoded max_updates=1000)
+        # Progress is measured against the horizon the instance computed.
+        max_updates = sa_ppo._max_updates
         test_cases = [
             (0, 0.10),  # Start: epsilon_init
-            (250, 0.0875),  # 25%: 0.1 + (0.05 - 0.1) * 0.25
-            (500, 0.075),  # 50%: 0.1 + (0.05 - 0.1) * 0.5
-            (750, 0.0625),  # 75%: 0.1 + (0.05 - 0.1) * 0.75
-            (1000, 0.05),  # End: epsilon_final
-            (1500, 0.05),  # After max_updates: should clamp to epsilon_final
+            (max_updates // 4, 0.0875),  # 25%: 0.1 + (0.05 - 0.1) * 0.25
+            (max_updates // 2, 0.075),  # 50%
+            (3 * max_updates // 4, 0.0625),  # 75%
+            (max_updates, 0.05),  # End: epsilon_final
+            (max_updates * 3 // 2, 0.05),  # Past the horizon: clamped
         ]
 
         for update_count, expected_epsilon in test_cases:
