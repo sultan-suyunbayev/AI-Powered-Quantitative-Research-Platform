@@ -364,10 +364,14 @@ class TestMiddlewareInstance:
 
     def test_middleware_instance_tracked(self):
         """Test middleware instances are tracked."""
-        initial_count = len(TelemetryRedactionMiddleware._instances)
         middleware = TelemetryRedactionMiddleware()
 
-        assert len(TelemetryRedactionMiddleware._instances) == initial_count + 1
+        # _instances holds id() values and never releases them, so the ids of
+        # dead instances linger and CPython can hand the same address to a new
+        # one -- after a few hundred middlewares the set stops growing. What has
+        # to hold is that this instance is registered and the class reports
+        # itself active.
+        assert id(middleware) in TelemetryRedactionMiddleware._instances
         assert TelemetryRedactionMiddleware.is_active()
 
     def test_config_hash(self):

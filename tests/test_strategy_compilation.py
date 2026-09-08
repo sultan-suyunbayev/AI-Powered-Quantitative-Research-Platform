@@ -22,6 +22,25 @@ from fastapi.testclient import TestClient
 client = TestClient(api, headers={"X-API-Key": app_module.API_TOKEN})
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _isolated_cwd(tmp_path_factory):
+    """Keep the endpoints' relative "strategies/" out of the repository.
+
+    api_save_strategy resolves its paths against the process CWD, so running
+    from the repository root rewrote the tracked strategies/custom_*.py files
+    with these test payloads. Module-scoped: test_get_strategy reads back what
+    test_save_strategy_success wrote.
+    """
+    workdir = tmp_path_factory.mktemp("strategy_cwd")
+    (workdir / "strategies").mkdir()
+    previous = os.getcwd()
+    os.chdir(workdir)
+    try:
+        yield workdir
+    finally:
+        os.chdir(previous)
+
+
 def test_get_strategy_templates():
     # Test getting templates for equity
     res = client.get("/api/strategy/templates?asset=equity")
