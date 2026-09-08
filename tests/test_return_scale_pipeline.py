@@ -1,4 +1,5 @@
 import inspect
+import re
 
 import pytest
 
@@ -109,14 +110,17 @@ def test_return_scale_pipeline_with_normalization():
     assert returns_abs_p99.item() < 0.2
 
 
+# Multiplication or division by exactly 100 --  keeps "* 10000" (the bps
+# conversion in the spread calculation) from matching as a substring.
+_PERCENT_SCALING = re.compile(r"[*/]\s*100")
+
+
 def test_reward_pipeline_has_no_percent_scaling():
     step_src = inspect.getsource(trading_patchnew.TradingEnv.step)
-    for pattern in ("*100", "* 100", "/100", "/ 100"):
-        assert pattern not in step_src
+    assert not _PERCENT_SCALING.search(step_src), "TradingEnv.step scales by 100"
 
-    collect_src = inspect.getsource(DistributionalPPO._collect_rollouts)
-    for pattern in ("*100", "* 100", "/100", "/ 100"):
-        assert pattern not in collect_src
+    collect_src = inspect.getsource(DistributionalPPO.collect_rollouts)
+    assert not _PERCENT_SCALING.search(collect_src), "collect_rollouts scales by 100"
 
 
 def test_distributional_ppo_source_has_no_action_nvec_logging():
