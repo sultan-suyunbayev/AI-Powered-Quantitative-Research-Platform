@@ -425,25 +425,41 @@ class TestGetSymbolsFunction:
 
     @patch("services.universe.run")
     def test_get_symbols_creates_missing_file(self, mock_run):
-        """Test get_symbols creates file if missing."""
-        mock_run.return_value = ["BTCUSDT"]
+        """get_symbols refreshes through run() when the cache is missing.
+
+        run() is what writes the file, so the stub has to write it too --
+        otherwise get_symbols opens a path nothing created.
+        """
 
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_path = os.path.join(tmpdir, "symbols.json")
 
+            def _write_cache(out, **_kwargs):
+                with open(out, "w", encoding="utf-8") as fh:
+                    json.dump(["BTCUSDT"], fh)
+                return ["BTCUSDT"]
+
+            mock_run.side_effect = _write_cache
+
             symbols = get_symbols(out=cache_path)
 
-            # Should call run() for missing file
             mock_run.assert_called_once()
             assert os.path.exists(cache_path)
+            assert symbols == ["BTCUSDT"]
 
     def test_get_symbols_with_liquidity_threshold(self):
         """Test get_symbols passes liquidity_threshold to run()."""
         with patch("services.universe.run") as mock_run:
-            mock_run.return_value = ["BTCUSDT"]
-
             with tempfile.TemporaryDirectory() as tmpdir:
                 cache_path = os.path.join(tmpdir, "symbols.json")
+
+                # run() is what writes the cache; get_symbols reads it afterwards.
+                def _write_cache(out, **_kwargs):
+                    with open(out, "w", encoding="utf-8") as fh:
+                        json.dump(["BTCUSDT"], fh)
+                    return ["BTCUSDT"]
+
+                mock_run.side_effect = _write_cache
 
                 get_symbols(out=cache_path, liquidity_threshold=1000000.0)
 
