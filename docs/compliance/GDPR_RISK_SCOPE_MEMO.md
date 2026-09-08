@@ -81,7 +81,7 @@ The platform operates in two strictly separated zones with different data handli
 
 | Invariant ID | Rule | GDPR Principle | Reference |
 |---|---|---|---|
-| **INV-001** | Cloud does not receive broker credentials, API keys, or tokens | Art. 25 (Privacy by Design) | Design Doc §0.2, §5.4 |
+| **INV-001** | Cloud never receives broker credentials, API keys, or tokens | Art. 25 (Privacy by Design) | Design Doc §0.2, §5.4 |
 | **INV-002** | Cloud→Agent commands do not carry order-like payloads (side/qty/price) | Art. 5(1)(c) (Data Minimization) | Design Doc §10.5, §1697 |
 | **INV-003** | Telemetry defaults to AGGREGATED; redaction is mandatory | Art. 5(1)(c), Art. 25 | Design Doc §13.1, §19.4 |
 | **INV-004** | RAW_ORDER_EVENTS requires enterprise + explicit opt-in | Art. 7 (Consent), Art. 25 | Design Doc §13.2, §1739 |
