@@ -113,7 +113,12 @@ def create_engine(
         - For SQLite, connection pooling is disabled (StaticPool used instead)
         - For PostgreSQL, QueuePool is used in production, NullPool in test mode
     """
-    db_url = url or DATABASE_URL
+    # Read the environment when the engine is built, not when this module was
+    # first imported. A caller that sets CCEA_DATABASE_URL afterwards -- the
+    # desktop supervisor does exactly that, then seeds the database it named --
+    # would otherwise get an engine pointed at the default file, and the tables
+    # would be created somewhere other than where the seed goes.
+    db_url = url or os.getenv("CCEA_DATABASE_URL") or DATABASE_URL
 
     # Validate the URL before creating engine
     _validate_database_url(db_url)
