@@ -11431,11 +11431,16 @@ class ExecutionSimulator:
                 best_bid = self._finite_float(self._last_bid)
                 best_ask = self._finite_float(self._last_ask)
                 if best_bid is None and best_ask is None:
-                    synthetic_best = self._finite_float(price_q)
+                    # No quotes this step: stand the touch on the reference price.
+                    # It used to be taken from the order's own limit price first,
+                    # which made every limit order marketable against itself -- a
+                    # buy at 99 with the reference at 100 filled at 99, and the
+                    # resting-order path below was unreachable.
+                    synthetic_best = self._finite_float(ref)
                     if synthetic_best is None:
                         synthetic_best = self._finite_float(ref_limit)
                     if synthetic_best is None:
-                        synthetic_best = self._finite_float(ref)
+                        synthetic_best = self._finite_float(price_q)
                     if synthetic_best is not None:
                         if side == "BUY":
                             best_ask = synthetic_best

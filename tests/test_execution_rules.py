@@ -190,14 +190,16 @@ def test_unquantized_limit_executes_permissive():
     assert len(report.trades) == 1
     trade = report.trades[0]
     assert trade.client_order_id == oid
-    expected_price = sim.quantizer.quantize_price("BTCUSDT", proto.abs_price)
+    quantized_price = sim.quantizer.quantize_price("BTCUSDT", proto.abs_price)
     expected_qty = sim.quantizer.quantize_qty("BTCUSDT", abs(proto.volume_frac))
     expected_qty = sim.quantizer.clamp_notional(
         "BTCUSDT",
-        expected_price if expected_price > 0 else proto.abs_price,
+        quantized_price if quantized_price > 0 else proto.abs_price,
         expected_qty,
     )
-    assert trade.price == pytest.approx(expected_price)
+    # Marketable against the reference price, and crossing pays the touch --
+    # see test_unquantized_limit_rejected_strict for why that is ref_price here.
+    assert trade.price == pytest.approx(100.0)
     assert trade.qty == pytest.approx(expected_qty)
     assert sim._last_bid is None and sim._last_ask is None
     assert sim.strict_filters is False
@@ -215,14 +217,18 @@ def test_unquantized_limit_rejected_strict():
     assert len(report.trades) == 1
     trade = report.trades[0]
     assert trade.client_order_id == oid
-    expected_price = sim.quantizer.quantize_price("BTCUSDT", proto.abs_price)
+    quantized_price = sim.quantizer.quantize_price("BTCUSDT", proto.abs_price)
     expected_qty = sim.quantizer.quantize_qty("BTCUSDT", abs(proto.volume_frac))
     expected_qty = sim.quantizer.clamp_notional(
         "BTCUSDT",
-        expected_price if expected_price > 0 else proto.abs_price,
+        quantized_price if quantized_price > 0 else proto.abs_price,
         expected_qty,
     )
-    assert trade.price == pytest.approx(expected_price)
+    # A buy limit at 101 is marketable against a reference of 100, and crossing
+    # pays the touch, not your own limit: with no quotes the simulator stands the
+    # touch on ref_price. It used to stand it on the order's own price, so this
+    # filled at 101 and every limit order was marketable against itself.
+    assert trade.price == pytest.approx(100.0)
     assert trade.qty == pytest.approx(expected_qty)
     assert sim._last_bid is None and sim._last_ask is None
 

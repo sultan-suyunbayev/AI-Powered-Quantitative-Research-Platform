@@ -29,6 +29,14 @@ OUT_DIR = Path("data/signals")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
+class ModelLoadError(RuntimeError):
+    """A deliberate refusal to use a model file.
+
+    Distinct from "this file is not something torch can read", which is the
+    signal to fall through and try the sklearn loader.
+    """
+
+
 def _load_model():
     """Load a trained model from models/ directory.
 
@@ -69,7 +77,7 @@ def _load_model():
                     )
                     model = torch.load(path, map_location="cpu", weights_only=False)
                 else:
-                    raise RuntimeError(
+                    raise ModelLoadError(
                         f"SECURITY: Model {path} contains non-tensor data and cannot be loaded securely. "
                         f"This is blocked by default to prevent arbitrary code execution. "
                         f"Options: (1) Convert model: python tools/convert_legacy_models.py, "
@@ -77,8 +85,24 @@ def _load_model():
                         f"Original error: {e}"
                     ) from e
 
+            if not hasattr(model, "eval"):
+                # weights_only=True gives back the tensors, not a Module, and
+                # _predict calls the model. There is no architecture here to load
+                # the weights into, so say that rather than reporting no model.
+                raise ModelLoadError(
+                    f"Model {path} holds a state_dict, not a serialised model, and there is "
+                    f"no architecture here to load it into. Save the model itself "
+                    f"(torch.save(model, path)) or run: python tools/convert_legacy_models.py"
+                )
+
             model.eval()
             return ("torch", model, path)
+        except ModelLoadError:
+            # A refusal is the answer, not a reason to try the next loader. This
+            # handler used to swallow it, so a model rejected by the fail-closed
+            # policy surfaced as FileNotFoundError("No supported model found") and
+            # the operator never saw why, or how to convert it.
+            raise
         except Exception:
             pass
     # Try sklearn/joblib

@@ -596,7 +596,7 @@ class TestP5_PreTrainingValidation:
             }
         )
 
-        with pytest.raises(ValueError, match="отрицательные значения"):
+        with pytest.raises(ValueError, match="отрицательные цены"):
             validator.validate(df)
 
     def test_data_validator_ohlc_invariants(self):
