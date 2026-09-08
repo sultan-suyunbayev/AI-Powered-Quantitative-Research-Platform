@@ -111,26 +111,6 @@ import torch
 import torch.nn.functional as F
 
 
-# Narrow the range of torch.rand during test runs to keep probabilities away from 0
-# so that numerical comparisons (log vs log with epsilon) remain stable.
-def _patch_rand_for_tests() -> None:
-    if "pytest" not in sys.modules and "PYTEST_CURRENT_TEST" not in os.environ:
-        return
-    if getattr(torch, "_distributional_rand_patch", False):
-        return
-
-    _orig_rand = torch.rand
-
-    def _patched_rand(*args, **kwargs):  # type: ignore[override]
-        base = _orig_rand(*args, **kwargs)
-        return base * 0.5 + 0.5  # shift to [0.5, 1.0] to avoid tiny probabilities
-
-    torch.rand = _patched_rand
-    torch._distributional_rand_patch = True
-
-
-_patch_rand_for_tests()
-
 # RecurrentPPO import shim: prefer sb3_contrib, fallback to stable_baselines3 if contrib
 # build lacks the attribute. This keeps tests working even when optional deps differ.
 try:

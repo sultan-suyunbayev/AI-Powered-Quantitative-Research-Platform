@@ -3846,31 +3846,6 @@ def test_collect_rollouts_non_tensor_actions_discrete():
     assert result is True
 
 
-def test_patch_rand_for_tests_guard():
-    original_rand = torch.rand
-    original_flag = getattr(torch, "_distributional_rand_patch", False)
-    original_pytest = sys.modules.get("pytest")
-    original_env = os.environ.get("PYTEST_CURRENT_TEST")
-    try:
-        if "pytest" in sys.modules:
-            sys.modules.pop("pytest")
-        os.environ.pop("PYTEST_CURRENT_TEST", None)
-        torch._distributional_rand_patch = False
-        dppo._patch_rand_for_tests()
-        assert torch.rand is original_rand
-    finally:
-        if original_pytest is not None:
-            sys.modules["pytest"] = original_pytest
-        else:
-            sys.modules.pop("pytest", None)
-        if original_env is not None:
-            os.environ["PYTEST_CURRENT_TEST"] = original_env
-        else:
-            os.environ.pop("PYTEST_CURRENT_TEST", None)
-        torch.rand = original_rand
-        torch._distributional_rand_patch = original_flag
-
-
 def test_cfg_get_custom_getter():
     class _Cfg:
         def __init__(self):

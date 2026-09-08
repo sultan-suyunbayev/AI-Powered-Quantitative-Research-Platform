@@ -117,21 +117,30 @@ check-clean:
 rebuild: clean build
 
 # Run tests (requires pytest)
+# -n auto --dist loadfile: the suite is ~21k tests and takes about an hour
+# serially, which does not fit a CI job. loadfile (not loadscope) keeps every
+# test of a file in one worker, so module-scoped fixtures and module-level
+# state stay where the tests expect them.
+# PYTEST_ARGS narrows a run: make test PYTEST_ARGS="-k quantizer"
+PYTEST_ARGS ?=
+PYTEST_WORKERS ?= auto
+
 test: build
 	@echo "$(GREEN)Running tests...$(NC)"
-	$(PYTHON) -m pytest tests/ -v --tb=short
+	$(PYTHON) -m pytest tests/ -v --tb=short -n $(PYTEST_WORKERS) --dist loadfile $(PYTEST_ARGS)
 	@echo "$(GREEN)[OK] Tests complete.$(NC)"
 
 # Run tests with coverage tracking (PM-005 support)
 # Generates coverage.xml for CI artifact upload and threshold enforcement
 test-coverage: build
 	@echo "$(GREEN)Running tests with coverage...$(NC)"
-	$(PYTHON) -m pytest tests/ -v --tb=short \
+	$(PYTHON) -m pytest tests/ -v --tb=short -n $(PYTEST_WORKERS) --dist loadfile \
 		--cov=. \
 		--cov-report=xml:coverage.xml \
 		--cov-report=html:htmlcov \
 		--cov-report=term-missing \
-		--cov-fail-under=0
+		--cov-fail-under=0 \
+		$(PYTEST_ARGS)
 	@echo "$(GREEN)[OK] Tests with coverage complete.$(NC)"
 	@echo "$(GREEN)Coverage report: coverage.xml, htmlcov/index.html$(NC)"
 

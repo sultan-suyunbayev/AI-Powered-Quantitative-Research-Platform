@@ -997,12 +997,17 @@ class TestImportFallbacks:
         assert hasattr(dppo, "_DISTRIBUTIONAL_POLICY_ALIASES")
         assert isinstance(dppo._DISTRIBUTIONAL_POLICY_ALIASES, dict)
 
-    def test_patch_rand_for_tests_idempotent(self):
-        """_patch_rand_for_tests should be idempotent."""
-        # Should not raise even when called multiple times
-        dppo._patch_rand_for_tests()
-        dppo._patch_rand_for_tests()
-        assert getattr(torch, "_distributional_rand_patch", False)
+    def test_module_does_not_patch_torch_rand(self):
+        """Importing the module must not change torch's behaviour.
+
+        It used to detect pytest and replace torch.rand with a version shifted
+        into [0.5, 1.0].  That made the library behave differently under test
+        than in production, and skewed every other test in the process.
+        """
+        assert not hasattr(dppo, "_patch_rand_for_tests")
+        assert not getattr(torch, "_distributional_rand_patch", False)
+        sample = torch.rand(4096)
+        assert float(sample.min()) < 0.5, "torch.rand is still being shifted"
 
 
 # =============================================================================

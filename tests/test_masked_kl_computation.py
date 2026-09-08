@@ -9,6 +9,8 @@ Both fixes ensure that KL divergence metrics only consider valid trading samples
 excluding no-trade windows and masked-out transitions.
 """
 
+import contextlib
+
 import pytest
 import numpy as np
 
@@ -18,6 +20,59 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from distributional_ppo import DistributionalPPO
 from custom_policy_patch1 import CustomActorCriticPolicy
 from unittest.mock import patch, MagicMock
+
+
+class _MaskedBatch:
+    """A rollout batch with a ``mask`` attached.
+
+    The batches are NamedTuples, so the attribute cannot simply be assigned;
+    everything except ``mask`` is delegated to the wrapped batch.  The trainer
+    reads the mask with getattr(rollout_data, "mask", None).
+    """
+
+    __slots__ = ("_batch", "mask")
+
+    def __init__(self, batch, mask):
+        object.__setattr__(self, "_batch", batch)
+        object.__setattr__(self, "mask", mask)
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_batch"), name)
+
+
+@contextlib.contextmanager
+def _rollout_get_with_mask(model, mask):
+    """Yield rollout batches carrying ``mask``.
+
+    Two traps this avoids: the bound method must be captured BEFORE
+    patch.object replaces it (otherwise the side effect calls the mock and
+    recurses), and RolloutBuffer.get is a generator function, so the mask has
+    to reach every batch it yields rather than its return value.
+    """
+    buffer = model.rollout_buffer
+    original_get = buffer.get
+    flat_mask = mask.flatten()
+
+    def _batch_len(batch):
+        for field in ("advantages", "returns", "old_log_prob", "observations"):
+            value = getattr(batch, field, None)
+            if value is not None and hasattr(value, "shape") and value.shape:
+                return int(value.shape[0])
+        return int(flat_mask.numel())
+
+    def get_with_mask(batch_size=None):
+        offset = 0
+        total = int(flat_mask.numel())
+        for rollout_data in original_get(batch_size):
+            size = _batch_len(rollout_data)
+            # The buffer hands out minibatches, so each one gets its own slice
+            # of the mask; a whole-buffer mask would index out of bounds.
+            indices = (torch.arange(size) + offset) % total
+            yield _MaskedBatch(rollout_data, flat_mask[indices])
+            offset = (offset + size) % total
+
+    with patch.object(buffer, "get", side_effect=get_with_mask) as mock_get:
+        yield mock_get
 
 
 @pytest.fixture
@@ -37,12 +92,17 @@ def simple_env():
 @pytest.fixture
 def ppo_model(simple_env):
     """Create a PPO model for testing."""
+    # The architecture goes through arch_params; CustomActorCriticPolicy does
+    # not take distributional/num_quantiles/use_twin_critics as flat kwargs.
     policy_kwargs = {
-        "distributional": True,
-        "num_quantiles": 21,
-        "use_twin_critics": True,
-        "lstm_hidden_size": 64,
-        "features_extractor_kwargs": {"features_dim": 64},
+        "arch_params": {
+            "lstm_hidden_size": 64,
+            "critic": {
+                "distributional": True,
+                "num_quantiles": 21,
+                "use_twin_critics": True,
+            },
+        },
     }
 
     model = DistributionalPPO(
@@ -80,18 +140,7 @@ class TestMaskedKLComputation:
         mask = torch.rand(rollout_buffer.buffer_size, rollout_buffer.n_envs) > 0.5
 
         # Inject the mask into rollout data
-        with patch.object(ppo_model.rollout_buffer, "get", wraps=rollout_buffer.get) as mock_get:
-            # Mock the rollout data to include a mask
-            original_get = rollout_buffer.get
-
-            def get_with_mask(batch_size=None):
-                rollout_data = original_get(batch_size)
-                # Add a mask attribute to the returned data
-                rollout_data.mask = mask.flatten()
-                return rollout_data
-
-            mock_get.side_effect = get_with_mask
-
+        with _rollout_get_with_mask(ppo_model, mask):
             # Track KL computations during training
             kl_values = []
 
@@ -134,12 +183,13 @@ class TestMaskedKLComputation:
 
         # Train with mask
         with patch.object(ppo_model.rollout_buffer, "get") as mock_get:
-            # Create mock rollout data with mask
+            # Create mock rollout data with mask.  get() is a generator
+            # function, so the mock has to yield batches, not return one.
             rollout_data = MagicMock()
             rollout_data.mask = mask.flatten()
             rollout_data.actions_raw = torch.randn(num_total, 1)
             rollout_data.old_log_prob_raw = torch.randn(num_total)
-            mock_get.return_value = rollout_data
+            mock_get.side_effect = lambda *_args, **_kwargs: iter([rollout_data])
 
             # Train for one step
             try:
@@ -178,15 +228,7 @@ class TestMaskedKLComputation:
                 kl_without_mask = ppo_model.logger.name_to_value["train/approx_kl"]
 
         # Then, train with mask and record KL
-        with patch.object(rollout_buffer, "get", wraps=rollout_buffer.get) as mock_get:
-            original_get = rollout_buffer.get
-
-            def get_with_mask(batch_size=None):
-                rollout_data = original_get(batch_size)
-                rollout_data.mask = mask.flatten()
-                return rollout_data
-
-            mock_get.side_effect = get_with_mask
+        with _rollout_get_with_mask(ppo_model, mask):
 
             ppo_model.learn(total_timesteps=128)
             if hasattr(ppo_model.logger, "name_to_value"):
@@ -216,15 +258,7 @@ class TestMaskedKLComputation:
         # Create a mask that excludes ALL samples
         mask = torch.zeros(rollout_buffer.buffer_size, rollout_buffer.n_envs, dtype=torch.bool)
 
-        with patch.object(rollout_buffer, "get", wraps=rollout_buffer.get) as mock_get:
-            original_get = rollout_buffer.get
-
-            def get_with_zero_mask(batch_size=None):
-                rollout_data = original_get(batch_size)
-                rollout_data.mask = mask.flatten()
-                return rollout_data
-
-            mock_get.side_effect = get_with_zero_mask
+        with _rollout_get_with_mask(ppo_model, mask):
 
             # Train should handle zero valid samples gracefully
             try:
@@ -255,15 +289,7 @@ class TestMaskedKLComputation:
         rollout_buffer = ppo_model.rollout_buffer
         mask = torch.rand(rollout_buffer.buffer_size, rollout_buffer.n_envs) > 0.3
 
-        with patch.object(rollout_buffer, "get", wraps=rollout_buffer.get) as mock_get:
-            original_get = rollout_buffer.get
-
-            def get_with_mask(batch_size=None):
-                rollout_data = original_get(batch_size)
-                rollout_data.mask = mask.flatten()
-                return rollout_data
-
-            mock_get.side_effect = get_with_mask
+        with _rollout_get_with_mask(ppo_model, mask):
 
             # Train and collect KL values
             ppo_model.learn(total_timesteps=256)
@@ -298,15 +324,7 @@ class TestKLImpactOnScheduler:
             rollout_buffer = ppo_model.rollout_buffer
             mask = torch.rand(rollout_buffer.buffer_size, rollout_buffer.n_envs) > 0.5
 
-            with patch.object(rollout_buffer, "get", wraps=rollout_buffer.get) as mock_get:
-                original_get = rollout_buffer.get
-
-                def get_with_mask(batch_size=None):
-                    rollout_data = original_get(batch_size)
-                    rollout_data.mask = mask.flatten()
-                    return rollout_data
-
-                mock_get.side_effect = get_with_mask
+            with _rollout_get_with_mask(ppo_model, mask):
 
                 # Train and track scheduler calls
                 ppo_model.learn(total_timesteps=256)
@@ -353,15 +371,7 @@ class TestKLImpactOnEarlyStopping:
         # Track whether early stopping was triggered
         early_stop_triggered = False
 
-        with patch.object(rollout_buffer, "get", wraps=rollout_buffer.get) as mock_get:
-            original_get = rollout_buffer.get
-
-            def get_with_mask(batch_size=None):
-                rollout_data = original_get(batch_size)
-                rollout_data.mask = mask.flatten()
-                return rollout_data
-
-            mock_get.side_effect = get_with_mask
+        with _rollout_get_with_mask(ppo_model, mask):
 
             # Set high number of epochs to allow early stopping to trigger
             original_n_epochs = ppo_model.n_epochs
@@ -404,15 +414,7 @@ class TestMaskConsistency:
         rollout_buffer = ppo_model.rollout_buffer
         mask = torch.rand(rollout_buffer.buffer_size, rollout_buffer.n_envs) > 0.5
 
-        with patch.object(rollout_buffer, "get", wraps=rollout_buffer.get) as mock_get:
-            original_get = rollout_buffer.get
-
-            def get_with_mask(batch_size=None):
-                rollout_data = original_get(batch_size)
-                rollout_data.mask = mask.flatten()
-                return rollout_data
-
-            mock_get.side_effect = get_with_mask
+        with _rollout_get_with_mask(ppo_model, mask):
 
             # Train and collect all KL metrics
             ppo_model.learn(total_timesteps=256)
