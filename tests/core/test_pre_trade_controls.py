@@ -14,6 +14,8 @@ References:
     - RTS 6 Article 15: Pre-trade risk controls
 """
 
+import logging
+
 import pytest
 import time
 import threading
@@ -171,6 +173,28 @@ class TestMessageRateWindow:
 
         # After window expires, should succeed
         assert window.record(start + 0.6) is True
+
+
+# =============================================================================
+# Test Logging Safety
+# =============================================================================
+
+
+class TestAuthorizationLogging:
+    """authorize_trader() logs at INFO; the payload must survive record creation."""
+
+    def test_authorize_trader_logs_at_info_level(self, controls, authorized_trader, caplog):
+        # The bug this guards: extra={"name": ...} shadows a LogRecord attribute,
+        # so makeRecord raised KeyError. It stayed invisible while the logger sat
+        # at WARNING and only surfaced once another test enabled INFO.
+        with caplog.at_level(logging.INFO, logger="services.core.risk_controls.pre_trade_controls"):
+            controls.authorize_trader(authorized_trader)
+
+        record = next(r for r in caplog.records if "Trader authorized" in r.getMessage())
+        assert record.trader_id == authorized_trader.trader_id
+        assert record.trader_name == authorized_trader.name
+        # `name` stays the logger name, as logging requires.
+        assert record.name == "services.core.risk_controls.pre_trade_controls"
 
 
 # =============================================================================

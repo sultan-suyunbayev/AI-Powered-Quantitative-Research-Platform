@@ -14,6 +14,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 import numpy as np
+import gymnasium
 from gymnasium import spaces
 from stable_baselines3.common.vec_env import DummyVecEnv
 from custom_policy_patch1 import CustomActorCriticPolicy
@@ -22,10 +23,11 @@ import tempfile
 import os
 
 
-class SimpleDummyEnv:
+class SimpleDummyEnv(gymnasium.Env):
     """Simple test environment."""
 
     def __init__(self):
+        super().__init__()
         self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(10,), dtype=np.float32)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
         self.steps = 0
@@ -66,18 +68,14 @@ class TestVGSIntegration:
             },
         }
 
-        vgs_config = {
-            "enabled": True,
-            "beta": 0.99,
-            "alpha": 0.1,
-            "warmup_steps": 10,
-        }
-
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
-            vgs_config=vgs_config,
+            policy_kwargs={"arch_params": arch_params},
+            variance_gradient_scaling=True,
+            vgs_beta=0.99,
+            vgs_alpha=0.1,
+            vgs_warmup_steps=10,
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -87,7 +85,7 @@ class TestVGSIntegration:
 
         # Both features should be enabled
         assert model.policy._use_twin_critics is True
-        assert hasattr(model, "_vgs")
+        assert model._vgs_enabled is True
 
         # Should train successfully
         model.learn(total_timesteps=128)
@@ -105,15 +103,14 @@ class TestVGSIntegration:
             },
         }
 
-        vgs_config = {
-            "enabled": False,
-        }
-
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
-            vgs_config=vgs_config,
+            policy_kwargs={"arch_params": arch_params},
+            variance_gradient_scaling=False,
+            vgs_beta=0.99,
+            vgs_alpha=0.1,
+            vgs_warmup_steps=100,
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -284,7 +281,7 @@ class TestSaveLoadScenarios:
             policy2.load_state_dict(torch.load(temp_path))
 
             # Both critics should load correctly
-            latent = torch.randn(4, 32)
+            latent = torch.randn(4, policy1.hidden_dim)
             out1_before, out2_before = policy1._get_twin_value_logits(latent)
             out1_after, out2_after = policy2._get_twin_value_logits(latent)
 
@@ -334,7 +331,7 @@ class TestSaveLoadScenarios:
             assert any("quantile_head_2" in k or "_2" in k for k in result.missing_keys)
 
             # First critic should work
-            latent = torch.randn(4, 32)
+            latent = torch.randn(4, policy_new.hidden_dim)
             logits = policy_new._get_value_logits(latent)
             assert logits.shape == (4, 16)
 
@@ -363,7 +360,7 @@ class TestTrainingStability:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=3,
@@ -389,7 +386,7 @@ class TestTrainingStability:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -417,7 +414,7 @@ class TestTrainingStability:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=5,
@@ -467,7 +464,12 @@ class TestDefaultBehaviorIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params={"hidden_dim": 32, "critic": {"distributional": True, "num_quantiles": 8}},
+            policy_kwargs={
+                "arch_params": {
+                    "hidden_dim": 32,
+                    "critic": {"distributional": True, "num_quantiles": 8},
+                }
+            },
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -489,7 +491,7 @@ class TestDefaultBehaviorIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params={"hidden_dim": 32, "critic": {}},
+            policy_kwargs={"arch_params": {"hidden_dim": 32, "critic": {}}},
             n_steps=64,
             batch_size=32,
             n_epochs=2,

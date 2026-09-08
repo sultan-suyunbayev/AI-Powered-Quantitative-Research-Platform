@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
+os.environ.setdefault("SEASONALITY_API_TOKEN", "test-token-compliance")
+
+import app as app_module
 from app import api
 
-client = TestClient(api)
+# The global auth middleware only whitelists loopback peers; the TestClient
+# peer is "testclient", so authenticate explicitly with the API token.
+client = TestClient(api, headers={"X-API-Key": app_module.API_TOKEN})
 
 
 def test_compliance_clock_status():
@@ -91,12 +98,19 @@ def test_ai_act_explain_recent():
 
 
 def test_ai_act_explain_tx():
-    response = client.get("/api/ai-act/explain/TX-1002")
+    # DEC-8001 is one of the decisions the app records at start-up.
+    response = client.get("/api/ai-act/explain/DEC-8001")
     assert response.status_code == 200
     data = response.json()
-    assert "decision_id" in data
+    assert data["decision_id"] == "DEC-8001"
     assert "feature_importance" in data
     assert "rational_explanation" in data
+
+
+def test_ai_act_explain_unknown_tx_is_not_synthesised():
+    """An explainability record must map to a real logged decision."""
+    response = client.get("/api/ai-act/explain/TX-DOES-NOT-EXIST")
+    assert response.status_code == 404
 
 
 def test_ai_act_veto_override():
@@ -194,4 +208,8 @@ def test_killswitch_trigger():
     data = response.json()
     assert data["status"] == "success"
     assert data["scope"] == "XLON"
-    assert "cancelled_orders_count" in data
+    assert data["tripped"] is True
+    # The kill switch halts new order flow; cancelling resting orders is
+    # broker/OMS-side and asynchronous, so no cancellation count is reported.
+    assert "cancelled_orders_count" not in data
+    assert "message" in data

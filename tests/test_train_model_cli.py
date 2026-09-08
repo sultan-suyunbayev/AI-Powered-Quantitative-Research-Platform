@@ -8,7 +8,31 @@ import pytest
 pytest.importorskip("torch")
 
 
+def _real_sb3_available() -> bool:
+    """Report whether the genuine stable-baselines3 stack is importable.
+
+    ``stable-baselines3`` and ``sb3-contrib`` are pinned in the CPU/GPU lock
+    files, so on a normal install the real packages are present.  Installing
+    the stubs on top of them replaces ``sys.modules`` entries for the whole
+    worker process, which breaks every later test that constructs a real
+    ``DummyVecEnv``.  Only fall back to stubs when the real thing is missing.
+    """
+    try:
+        import sb3_contrib  # noqa: F401
+        import stable_baselines3  # noqa: F401
+        from sb3_contrib.common.recurrent.policies import (  # noqa: F401
+            RecurrentActorCriticPolicy,
+        )
+        from stable_baselines3.common.vec_env import DummyVecEnv  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
 def _install_sb3_stub():
+    if _real_sb3_available():
+        return
+
     sb3_contrib = sys.modules.get("sb3_contrib")
     if sb3_contrib is None:
         sb3_contrib = types.ModuleType("sb3_contrib")

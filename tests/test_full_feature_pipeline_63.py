@@ -34,51 +34,72 @@ def _block_start(name):
     raise KeyError(name)
 
 
-def test_ext_norm_dim_is_21():
-    """Проверка что EXT_NORM_DIM = 21 (было 16, добавили 5)"""
-    assert EXT_NORM_DIM == 21, f"Expected EXT_NORM_DIM=21, got {EXT_NORM_DIM}"
+def _configure_risk_attrs(mock_env):
+    """Mediator coerces these env attributes to float/int at construction.
+
+    A bare Mock() auto-creates them as Mock objects, which float() rejects, so
+    spell out the numeric defaults the real environment carries.
+    """
+    mock_env.max_abs_position = 1e12
+    mock_env.max_notional = 2e12
+    mock_env.max_drawdown_pct = 1.0
+    mock_env.intrabar_dd_pct = 0.30
+    mock_env.dd_window = 500
+    mock_env.bankruptcy_cash_th = -1e12
+    # A Mock run_config would make rate_limit a Mock and blow up the comparison.
+    mock_env.run_config = None
+    return mock_env
 
 
-def test_n_features_is_63():
-    """Проверка что N_FEATURES = 84 (было 63, добавили 21 external_validity flags)"""
-    # make_layout должен был вызваться при импорте
+def test_ext_norm_dim_matches_layout():
+    """EXT_NORM_DIM и блок external раскладки обязаны совпадать."""
+    assert EXT_NORM_DIM == _EXT_DIM, (
+        f"EXT_NORM_DIM={EXT_NORM_DIM} расходится с блоком external={_EXT_DIM}: "
+        "obs_builder пишет по раскладке, mediator — по константе"
+    )
+
+
+def test_n_features_matches_layout_sum():
+    """N_FEATURES должен быть суммой блоков, а не отдельно поддерживаемым числом."""
+    from feature_config import FEATURES_LAYOUT
     from feature_config import N_FEATURES as computed_features
 
-    assert computed_features == 84, f"Expected N_FEATURES=84, got {computed_features}"
+    assert computed_features == sum(b["size"] for b in FEATURES_LAYOUT)
+    assert computed_features == _N_FEATURES
 
 
-def test_feature_layout_sum():
-    """Проверка что сумма всех блоков = 84"""
+def test_feature_layout_structure():
+    """Структурные инварианты раскладки, которые обязаны держаться при любом росте."""
     from feature_config import FEATURES_LAYOUT
 
-    # Updated for corrected block structure (2025-11-24)
-    expected_sizes = {
-        "bar": 3,
-        "ma5": 2,  # Split from old indicators (20)
-        "ma20": 2,  # Split from old indicators (20)
-        "indicators": 14,  # Split from old indicators (20): 7 indicators × 2 (value + flag)
-        "derived": 2,  # Moved from indices 3-4 to 21-22
-        "agent": 6,
-        "microstructure": 3,
-        "bb_context": 2,  # Added (was missing!)
-        "metadata": 5,
-        "external": 21,  # было 16, стало 21
-        "external_validity": 21,  # NEW: validity flags for external features
-        "token_meta": 2,
-        "token": 1,
+    names = [block["name"] for block in FEATURES_LAYOUT]
+    assert len(names) == len(set(names)), f"дубли блоков в раскладке: {names}"
+
+    required = {
+        "bar",
+        "ma5",
+        "ma20",
+        "indicators",
+        "derived",
+        "agent",
+        "microstructure",
+        "bb_context",
+        "metadata",
+        "external",
+        "external_validity",
+        "token_meta",
+        "token",
     }
+    assert required.issubset(set(names)), f"в раскладке нет блоков {required - set(names)}"
 
-    total = 0
-    for block in FEATURES_LAYOUT:
-        name = block["name"]
-        size = block["size"]
-        if name in expected_sizes:
-            assert (
-                size == expected_sizes[name]
-            ), f"Block '{name}' has size {size}, expected {expected_sizes[name]}"
-        total += size
+    sizes = {block["name"]: block["size"] for block in FEATURES_LAYOUT}
+    # На каждый внешний признак приходится ровно один флаг валидности.
+    assert sizes["external_validity"] == sizes["external"]
+    assert all(size > 0 for size in sizes.values()), f"пустой блок в раскладке: {sizes}"
+    assert sum(sizes.values()) == _N_FEATURES
 
-    assert total == 84, f"Total features = {total}, expected 84"
+    # Блоки идут подряд, без дыр: смещение последнего + его размер = N_FEATURES.
+    assert _block_start(names[-1]) + sizes[names[-1]] == _N_FEATURES
 
 
 def test_mediator_extract_norm_cols_size():
@@ -90,7 +111,7 @@ def test_mediator_extract_norm_cols_size():
     mock_env.state = Mock(units=0.0, cash=10000.0, max_position=1.0)
     mock_env.lob = None
 
-    mediator = Mediator(mock_env, event_level=0)
+    mediator = Mediator(_configure_risk_attrs(mock_env), event_level=0)
 
     # Создаем mock row с всеми 24 техническими признаками (обновлено для 4h таймфрейма)
     mock_row = pd.Series(
@@ -122,10 +143,13 @@ def test_mediator_extract_norm_cols_size():
         }
     )
 
-    norm_cols = mediator._extract_norm_cols(mock_row)
+    norm_cols, norm_cols_validity = mediator._extract_norm_cols(mock_row)
 
     # Проверка размера
-    assert norm_cols.shape[0] == 21, f"Expected 21 norm_cols, got {norm_cols.shape[0]}"
+    assert (
+        norm_cols.shape[0] == _EXT_DIM
+    ), f"Expected {_EXT_DIM} norm_cols, got {norm_cols.shape[0]}"
+    assert norm_cols_validity.shape[0] == _EXT_DIM
 
     # Проверка типа
     assert norm_cols.dtype == np.float32, f"Expected float32, got {norm_cols.dtype}"
@@ -150,7 +174,7 @@ def test_mediator_norm_cols_no_double_tanh():
     mock_env.state = Mock(units=0.0, cash=10000.0, max_position=1.0)
     mock_env.lob = None
 
-    mediator = Mediator(mock_env, event_level=0)
+    mediator = Mediator(_configure_risk_attrs(mock_env), event_level=0)
 
     # Большое значение для проверки
     mock_row = pd.Series(
@@ -160,7 +184,7 @@ def test_mediator_norm_cols_no_double_tanh():
         }
     )
 
-    norm_cols = mediator._extract_norm_cols(mock_row)
+    norm_cols, _ = mediator._extract_norm_cols(mock_row)
 
     # Если бы применялся tanh, значение было бы близко к 1.0
     # Без tanh значение должно остаться 1000.0
@@ -177,7 +201,7 @@ def test_obs_builder_applies_tanh():
         pytest.skip("obs_builder not compiled, skipping")
 
     # Создаем norm_cols с большими значениями
-    norm_cols = np.array([1000.0] * 21, dtype=np.float32)
+    norm_cols = np.array([1000.0] * _EXT_DIM, dtype=np.float32)
 
     # Создаем output array
     out = np.zeros(_N_FEATURES, dtype=np.float32)
@@ -220,11 +244,9 @@ def test_obs_builder_applies_tanh():
         out_features=out,
     )
 
-    # External features начинаются с индекса 38
-    # (20 bar_level + 2 derived + 6 agent + 3 micro + 2 bollinger + 3 event + 2 fear_greed = 38)
-    # где bar_level = 3 bar + 4 ma_with_flags + 13 tech_indicators
-    external_start = 38
-    external_end = external_start + 21
+    # Смещение блока берём из раскладки, а не фиксируем числом.
+    external_start = _block_start("external")
+    external_end = external_start + _EXT_DIM
 
     external_features = out[external_start:external_end]
 
@@ -314,7 +336,7 @@ def test_full_pipeline_integration():
     mock_env.last_mtm_price = 50200.0
     mock_env.last_mid = 50200.0
     mock_env._last_reward_price = 50100.0
-    mock_env.observation_space = Mock(shape=(62,))
+    mock_env.observation_space = Mock(shape=(_N_FEATURES,))
 
     # Создаем mock sim
     mock_sim = Mock()
@@ -330,7 +352,7 @@ def test_full_pipeline_integration():
     mock_env.sim = mock_sim
     mock_env._resolve_reward_price = Mock(return_value=50200.0)
 
-    mediator = Mediator(mock_env, event_level=0)
+    mediator = Mediator(_configure_risk_attrs(mock_env), event_level=0)
     mediator._context_row_idx = 1
 
     # Строим observation
@@ -338,7 +360,7 @@ def test_full_pipeline_integration():
     obs = mediator._build_observation(row=row, state=mock_env.state, mark_price=50200.0)
 
     # Проверки
-    assert obs.shape == (62,), f"Expected shape (62,), got {obs.shape}"
+    assert obs.shape == (_N_FEATURES,), f"Expected shape ({_N_FEATURES},), got {obs.shape}"
     assert obs.dtype == np.float32, f"Expected float32, got {obs.dtype}"
     assert np.all(np.isfinite(obs)), f"Observation contains NaN or Inf: {obs[~np.isfinite(obs)]}"
 
@@ -346,8 +368,9 @@ def test_full_pipeline_integration():
     assert np.all(obs >= -1e6), f"Some features too negative: {obs.min()}"
     assert np.all(obs <= 1e6), f"Some features too positive: {obs.max()}"
 
-    # Проверка что external features (индексы 38-58) находятся в разумном диапазоне
-    external = obs[38:59]
+    # Проверка что блок external находится в разумном диапазоне
+    _ext_start = _block_start("external")
+    external = obs[_ext_start : _ext_start + _EXT_DIM]
     assert np.all(external >= -3.0), f"External features below -3: {external[external < -3.0]}"
     assert np.all(external <= 3.0), f"External features above 3: {external[external > 3.0]}"
 
@@ -357,8 +380,8 @@ def test_full_pipeline_integration():
     print(f"  All features range: [{obs.min():.3f}, {obs.max():.3f}]")
 
 
-def test_all_21_norm_cols_present_in_dataframe():
-    """Проверка что все 21 признака правильно именованы (обновлено для 4h таймфрейма)"""
+def test_crypto_norm_cols_present_in_dataframe():
+    """Имена крипто-подблока external (индексы 0..20) — уникальны и не поехали."""
     expected_cols = [
         "cvd_24h",
         "cvd_7d",  # было cvd_168h
@@ -384,10 +407,11 @@ def test_all_21_norm_cols_present_in_dataframe():
         "taker_buy_ratio_momentum_12h",  # без изменений
     ]
 
-    assert len(expected_cols) == 21, f"Expected 21 column names, got {len(expected_cols)}"
-    assert len(set(expected_cols)) == 21, "Duplicate column names found"
+    assert len(set(expected_cols)) == len(expected_cols), "Duplicate column names found"
+    # Крипто-подблок — начало external; за ним идут stock- и macro-признаки.
+    assert len(expected_cols) <= _EXT_DIM
 
-    print(f"✓ All 21 norm_cols have unique names")
+    print(f"✓ {len(expected_cols)} crypto norm_cols have unique names")
 
 
 if __name__ == "__main__":

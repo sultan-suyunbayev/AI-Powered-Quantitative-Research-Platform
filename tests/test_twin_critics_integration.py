@@ -70,7 +70,7 @@ class TestTwinCriticsIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -114,7 +114,7 @@ class TestTwinCriticsIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -169,7 +169,7 @@ class TestTwinCriticsIntegration:
         model_single = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params_single,
+            policy_kwargs={"arch_params": arch_params_single},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -185,7 +185,7 @@ class TestTwinCriticsIntegration:
         model_twin = DistributionalPPO(
             CustomActorCriticPolicy,
             env_twin,
-            arch_params=arch_params_twin,
+            policy_kwargs={"arch_params": arch_params_twin},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -216,18 +216,14 @@ class TestTwinCriticsIntegration:
             },
         }
 
-        vgs_config = {
-            "enabled": True,
-            "beta": 0.99,
-            "alpha": 0.1,
-            "warmup_steps": 10,
-        }
-
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
-            vgs_config=vgs_config,
+            policy_kwargs={"arch_params": arch_params},
+            variance_gradient_scaling=True,
+            vgs_beta=0.99,
+            vgs_alpha=0.1,
+            vgs_warmup_steps=10,
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -240,7 +236,8 @@ class TestTwinCriticsIntegration:
 
         # Check that both features are active
         assert model.policy._use_twin_critics is True
-        assert hasattr(model, "_vgs") and model._vgs is not None
+        assert model._vgs_enabled is True
+        assert model._variance_gradient_scaler is not None
 
     def test_backward_compatibility(self, env):
         """Test that explicitly disabling twin critics maintains backward compatibility."""
@@ -257,7 +254,7 @@ class TestTwinCriticsIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -291,7 +288,7 @@ class TestTwinCriticsIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -334,7 +331,7 @@ class TestTwinCriticsOptimization:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -373,7 +370,7 @@ class TestTwinCriticsOptimization:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,

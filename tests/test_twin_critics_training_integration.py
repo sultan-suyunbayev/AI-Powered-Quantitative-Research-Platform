@@ -13,16 +13,18 @@ import pytest
 
 torch = pytest.importorskip("torch")
 import numpy as np
+import gymnasium
 from gymnasium import spaces
 from stable_baselines3.common.vec_env import DummyVecEnv
 from custom_policy_patch1 import CustomActorCriticPolicy
 from distributional_ppo import DistributionalPPO
 
 
-class SimpleDummyEnv:
+class SimpleDummyEnv(gymnasium.Env):
     """Simple environment for testing."""
 
     def __init__(self):
+        super().__init__()
         self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(10,), dtype=np.float32)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
         self.steps = 0
@@ -67,7 +69,7 @@ class TestTwinCriticsTrainingIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -78,8 +80,11 @@ class TestTwinCriticsTrainingIntegration:
         # Initially, latent_vf should not be cached
         assert model.policy._last_latent_vf is None
 
-        # Collect rollouts (triggers forward pass)
-        model.collect_rollouts(env, model._last_callback, model.rollout_buffer, n_rollout_steps=64)
+        # Collect rollouts (triggers forward pass).  _setup_learn primes
+        # _last_obs / _last_episode_starts and hands back a real callback.
+        _, callback = model._setup_learn(total_timesteps=64, callback=None)
+        callback.on_training_start(locals(), globals())
+        model.collect_rollouts(env, callback, model.rollout_buffer, n_rollout_steps=64)
 
         # After rollouts, latent_vf should be cached
         # Note: It might be None if not called recently, but the attribute should exist
@@ -106,7 +111,7 @@ class TestTwinCriticsTrainingIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -148,7 +153,7 @@ class TestTwinCriticsTrainingIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -190,7 +195,7 @@ class TestTwinCriticsTrainingIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -243,7 +248,7 @@ class TestTwinCriticsTrainingIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -284,7 +289,7 @@ class TestTwinCriticsTrainingIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -329,7 +334,7 @@ class TestTwinCriticsTrainingIntegration:
         model_single = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params_single,
+            policy_kwargs={"arch_params": arch_params_single},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -344,7 +349,7 @@ class TestTwinCriticsTrainingIntegration:
         model_twin = DistributionalPPO(
             CustomActorCriticPolicy,
             env_twin,
-            arch_params=arch_params_twin,
+            policy_kwargs={"arch_params": arch_params_twin},
             n_steps=64,
             batch_size=32,
             n_epochs=2,

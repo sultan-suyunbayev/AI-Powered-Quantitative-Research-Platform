@@ -11632,25 +11632,11 @@ class ExecutionSimulator:
                                 exec_status=exec_status,
                                 fill_ratio=float(fill_ratio),
                             )
-                        remaining_capacity = None
-                        if cap_enforced:
-                            remaining_capacity = max(0.0, cap_base_per_bar - used_base_after_child)
-                        # BUG: `plan_queue` and `original_planned_qty` are not bound in
-                        # this scope — this block was copied from the child-execution
-                        # path further down, where both exist. Reaching it raises
-                        # NameError. Left as-is pending a decision on whether the
-                        # limit path should schedule a child remainder at all; see
-                        # docs/AUDIT_2026-09.md section 9.2.
-                        self._schedule_child_remainder(
-                            plan_queue,  # noqa: F821
-                            cadence_map,
-                            child=child,
-                            planned_qty=original_planned_qty,  # noqa: F821
-                            executed_qty=float(exec_qty),
-                            original_hint=hint_original,
-                            bar_end_offset=bar_end_offset,
-                            capacity_remaining=remaining_capacity,
-                        )
+                        # The limit path carries no child plan: MarketChild queues,
+                        # cadence maps and bar-end offsets only exist while the MARKET
+                        # branch drains `child_queue`.  The remainder of a partially
+                        # filled limit order is handled right below by shrinking
+                        # `qty_q` and retrying as a maker order.
                         if exec_qty + 1e-12 < qty_q:
                             if tif == "IOC":
                                 _cancel(p.client_order_id, "IOC")
@@ -11791,25 +11777,8 @@ class ExecutionSimulator:
                                 exec_status=exec_status,
                                 fill_ratio=float(fill_ratio),
                             )
-                        remaining_capacity = None
-                        if cap_enforced:
-                            remaining_capacity = max(0.0, cap_base_per_bar - used_base_after)
-                        # BUG: `plan_queue` and `original_planned_qty` are not bound in
-                        # this scope — this block was copied from the child-execution
-                        # path further down, where both exist. Reaching it raises
-                        # NameError. Left as-is pending a decision on whether the
-                        # limit path should schedule a child remainder at all; see
-                        # docs/AUDIT_2026-09.md section 9.2.
-                        self._schedule_child_remainder(
-                            plan_queue,  # noqa: F821
-                            cadence_map,
-                            child=child,
-                            planned_qty=original_planned_qty,  # noqa: F821
-                            executed_qty=float(qty_q),
-                            original_hint=hint_original,
-                            bar_end_offset=bar_end_offset,
-                            capacity_remaining=remaining_capacity,
-                        )
+                        # No child plan exists on the limit path (see the MARKET
+                        # branch): the maker fill is complete for this order.
                         continue
 
                 if tif in ("IOC", "FOK"):
