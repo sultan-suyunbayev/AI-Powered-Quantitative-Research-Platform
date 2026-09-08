@@ -230,9 +230,12 @@ def test_quantile_huber_loss_asymmetric_weighting() -> None:
     targets_under = torch.tensor([[error]], dtype=torch.float32)
     loss_under = DistributionalPPO._quantile_huber_loss(algo, predicted_under, targets_under)
 
-    # For τ = 0.1, underestimation should be penalized ~9x more than overestimation
+    # Dabney et al. (2018): delta = T - Q, weight = |tau - 1{delta < 0}|.
+    # At tau = 0.1 an OVERestimation (Q > T, delta < 0) carries weight 0.9 and an
+    # underestimation weight 0.1 -- so the ratio is 1/9, not 9. The opposite
+    # expectation is the pre-fix sign convention.
     ratio = loss_under.item() / loss_over.item()
-    expected_ratio = 0.9 / 0.1  # 9.0
+    expected_ratio = 0.1 / 0.9  # 1/9
     assert math.isclose(
         ratio, expected_ratio, rel_tol=0.01
     ), f"Expected ratio {expected_ratio:.1f}, got {ratio:.4f}"

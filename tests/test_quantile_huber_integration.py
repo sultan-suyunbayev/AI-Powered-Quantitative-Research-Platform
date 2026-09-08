@@ -299,11 +299,15 @@ def test_quantile_huber_loss_broadcast_correctness() -> None:
     assert grad2_first > 0, "First sample should have gradients"
     assert grad2_second > 0, "Second sample should have gradients"
 
-    # Importantly: gradients should be different because targets are different
-    # (This verifies no accidental batch-dimension broadcasting)
-    assert not math.isclose(
-        grad2_first, grad2_second, rel_tol=0.1
+    # The two samples err in opposite directions, so their gradients must point
+    # opposite ways. Comparing the max ABSOLUTE gradient does not show this: the
+    # tau weights are symmetric, so both magnitudes are the same. Compare the
+    # signed vectors, which is what actually catches a batch-dimension broadcast.
+    assert not torch.allclose(
+        predicted2.grad[0], predicted2.grad[1]
     ), "Gradients should differ for different targets"
+    assert (predicted2.grad[0] > 0).all(), "overestimation pushes the prediction down"
+    assert (predicted2.grad[1] < 0).all(), "underestimation pushes it up"
 
 
 def test_quantile_huber_loss_kappa_clipping_to_minimum() -> None:

@@ -274,21 +274,24 @@ def test_quantile_loss_training_convergence():
     torch.manual_seed(42)
     targets = torch.tensor([-1.0, -0.5, 0.0, 0.5, 1.0], dtype=torch.float32).reshape(-1, 1)
 
-    # Initialize predictions at zero
-    predicted = torch.nn.Parameter(torch.zeros((5, 3), dtype=torch.float32))
+    # ONE set of quantiles shared across the batch. Giving every row its own
+    # row of quantiles makes each row fit its single target, and all three
+    # quantiles collapse onto that value -- averaging the rows afterwards then
+    # returns the mean of the targets rather than their quantiles.
+    shared_quantiles = torch.nn.Parameter(torch.zeros(3, dtype=torch.float32))
 
-    optimizer = torch.optim.Adam([predicted], lr=0.1)
+    optimizer = torch.optim.Adam([shared_quantiles], lr=0.05)
 
     # Train for multiple steps
-    for _ in range(200):
+    for _ in range(2000):
         optimizer.zero_grad()
+        predicted = shared_quantiles.unsqueeze(0).expand(targets.shape[0], -1)
         loss = DistributionalPPO._quantile_huber_loss(algo, predicted, targets)
         loss.backward()
         optimizer.step()
 
-    # Check that quantiles are ordered correctly
     with torch.no_grad():
-        mean_quantiles = predicted.mean(dim=0)
+        mean_quantiles = shared_quantiles.detach()
 
     # 25th percentile should be < 50th < 75th
     assert (
