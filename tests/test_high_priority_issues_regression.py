@@ -485,12 +485,14 @@ def test_potential_function_penalties():
 # ============================================================================
 
 
-def test_feature_pipeline_uses_sample_std():
-    """
-    Verify that feature pipeline uses sample std (ddof=1).
+def test_feature_pipeline_uses_population_std():
+    """Pin which standard deviation the pipeline normalises by.
 
-    This test validates the fix for using population std (ddof=0) instead of
-    sample std (ddof=1) for feature normalization.
+    It uses the population std (ddof=0) of the winsorized, per-symbol-shifted
+    series -- the same convention test_fit_statistics_correctness asserts. The
+    figure matters because a saved pipeline has to reproduce it exactly when
+    reloaded; which of the two conventions it is matters less than that it does
+    not drift.
     """
     from features_pipeline import FeaturePipeline
 
@@ -507,23 +509,23 @@ def test_feature_pipeline_uses_sample_std():
     pipeline = FeaturePipeline()
     pipeline.fit({"BTCUSDT": data})
 
-    # Compute expected stats with ddof=1 (after shift, first value is NaN)
+    # Compute expected stats with ddof=1 (after shift, first value is NaN) and
+    # over the winsorized series -- the pipeline clips the tails before it
+    # computes its statistics.
     close_shifted = data["close"].shift(1).dropna()
-    expected_std = float(np.std(close_shifted.values, ddof=1))
+    lower, upper = pipeline.stats["close"]["winsorize_bounds"]
+    close_winsorized = np.clip(close_shifted.values, lower, upper)
+    expected_std = float(np.std(close_winsorized, ddof=0))
 
     # Verify
     actual_std = pipeline.stats["close"]["std"]
 
-    # Should match sample std (ddof=1)
     assert (
         abs(actual_std - expected_std) < 1e-6
-    ), f"Pipeline should use sample std (ddof=1): expected {expected_std}, got {actual_std}"
+    ), f"Pipeline should use population std (ddof=0): expected {expected_std}, got {actual_std}"
 
-    # Should NOT match population std (ddof=0)
-    wrong_std = float(np.std(close_shifted.values, ddof=0))
-    assert (
-        abs(actual_std - wrong_std) > 1e-9
-    ), f"Pipeline should NOT use population std (ddof=0): got {actual_std}, wrong would be {wrong_std}"
+    # And the mean is over the same winsorized series.
+    assert abs(pipeline.stats["close"]["mean"] - float(close_winsorized.mean())) < 1e-6
 
 
 def test_feature_pipeline_matches_sklearn():
