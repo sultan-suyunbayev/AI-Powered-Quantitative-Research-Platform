@@ -1977,6 +1977,104 @@ def sortino_ratio(
 # --- ИЗМЕНЕНИЕ: Старая Python-функция удалена, так как заменена на Cython-версию ---
 
 
+# Config -> action-space helpers.  These live at module level because both
+# objective() and main() need them: main()'s final-evaluation env factory used
+# to reference objective()'s locals and raised NameError when it ran.
+def _extract_bins_vol_from_cfg(cfg, default=EXPECTED_VOLUME_BINS):
+    try:
+        aw = getattr(getattr(cfg, "algo", None), "action_wrapper", None)
+        val = getattr(aw, "bins_vol", None) if aw is not None else None
+        if val is None and hasattr(aw, "__dict__"):
+            val = aw.__dict__.get("bins_vol")
+        if val is None:
+            return int(default)
+        coerced = int(val)
+        if coerced != EXPECTED_VOLUME_BINS:
+            raise ValueError(
+                "BAR volume head requires exactly "
+                f"{EXPECTED_VOLUME_BINS} bins (config requested {coerced})."
+            )
+        return EXPECTED_VOLUME_BINS
+    except Exception as exc:
+        raise ValueError("Failed to resolve volume bins from config") from exc
+
+
+def _resolve_nested(cfg_obj, attr: str):
+    if cfg_obj is None:
+        return None
+    if isinstance(cfg_obj, Mapping):
+        return cfg_obj.get(attr)
+    try:
+        value = getattr(cfg_obj, attr)
+    except AttributeError:
+        value = None
+    if value is not None:
+        return value
+    for extra_name in ("__dict__", "__pydantic_extra__", "model_extra"):
+        try:
+            extra = getattr(cfg_obj, extra_name)
+        except AttributeError:
+            extra = None
+        if isinstance(extra, Mapping) and attr in extra:
+            return extra.get(attr)
+    return None
+
+def _coerce_bool(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+def _extract_action_overrides_from_cfg(cfg_obj) -> tuple[dict[str, object], bool]:
+    def _normalise_section(section_obj: Any) -> Mapping[str, Any]:
+        if section_obj is None:
+            return {}
+        if hasattr(section_obj, "dict"):
+            try:
+                payload = section_obj.dict()
+            except TypeError:
+                payload = None
+        else:
+            payload = None
+        if payload is None:
+            if isinstance(section_obj, Mapping):
+                payload = dict(section_obj)
+            else:
+                payload = {}
+                for extra_name in ("__dict__", "__pydantic_extra__", "model_extra"):
+                    try:
+                        extra = getattr(section_obj, extra_name)
+                    except AttributeError:
+                        extra = None
+                    if isinstance(extra, Mapping):
+                        payload.update(extra)
+        return payload if isinstance(payload, Mapping) else {}
+
+    algo_cfg = _resolve_nested(cfg_obj, "algo")
+    actions_payload = _normalise_section(_resolve_nested(algo_cfg, "actions"))
+    wrapper_payload = _normalise_section(_resolve_nested(algo_cfg, "action_wrapper"))
+
+    overrides: dict[str, object] = {}
+    long_only_flag = False
+
+    def _update_overrides(payload: Mapping[str, Any]) -> None:
+        nonlocal long_only_flag
+        if not payload:
+            return
+        if "long_only" in payload:
+            long_only_flag = _coerce_bool(payload.get("long_only"))
+        if "max_asset_weight" in payload and payload.get("max_asset_weight") is not None:
+            value = payload.get("max_asset_weight")
+            try:
+                overrides["max_asset_weight"] = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid max_asset_weight value: {value!r}") from exc
+
+    _update_overrides(actions_payload)
+    _update_overrides(wrapper_payload)
+
+    return overrides, long_only_flag
+
+
 def objective(
     trial: optuna.Trial,
     cfg: TrainConfig,
@@ -2030,100 +2128,7 @@ def objective(
             futures_funding_data is not None,
         )
 
-    def _extract_bins_vol_from_cfg(cfg, default=EXPECTED_VOLUME_BINS):
-        try:
-            aw = getattr(getattr(cfg, "algo", None), "action_wrapper", None)
-            val = getattr(aw, "bins_vol", None) if aw is not None else None
-            if val is None and hasattr(aw, "__dict__"):
-                val = aw.__dict__.get("bins_vol")
-            if val is None:
-                return int(default)
-            coerced = int(val)
-            if coerced != EXPECTED_VOLUME_BINS:
-                raise ValueError(
-                    "BAR volume head requires exactly "
-                    f"{EXPECTED_VOLUME_BINS} bins (config requested {coerced})."
-                )
-            return EXPECTED_VOLUME_BINS
-        except Exception as exc:
-            raise ValueError("Failed to resolve volume bins from config") from exc
-
     bins_vol = _extract_bins_vol_from_cfg(cfg, default=EXPECTED_VOLUME_BINS)
-
-    def _resolve_nested(cfg_obj, attr: str):
-        if cfg_obj is None:
-            return None
-        if isinstance(cfg_obj, Mapping):
-            return cfg_obj.get(attr)
-        try:
-            value = getattr(cfg_obj, attr)
-        except AttributeError:
-            value = None
-        if value is not None:
-            return value
-        for extra_name in ("__dict__", "__pydantic_extra__", "model_extra"):
-            try:
-                extra = getattr(cfg_obj, extra_name)
-            except AttributeError:
-                extra = None
-            if isinstance(extra, Mapping) and attr in extra:
-                return extra.get(attr)
-        return None
-
-    def _coerce_bool(value: object) -> bool:
-        if isinstance(value, str):
-            return value.strip().lower() in {"1", "true", "yes", "y", "on"}
-        return bool(value)
-
-    def _extract_action_overrides_from_cfg(cfg_obj) -> tuple[dict[str, object], bool]:
-        def _normalise_section(section_obj: Any) -> Mapping[str, Any]:
-            if section_obj is None:
-                return {}
-            if hasattr(section_obj, "dict"):
-                try:
-                    payload = section_obj.dict()
-                except TypeError:
-                    payload = None
-            else:
-                payload = None
-            if payload is None:
-                if isinstance(section_obj, Mapping):
-                    payload = dict(section_obj)
-                else:
-                    payload = {}
-                    for extra_name in ("__dict__", "__pydantic_extra__", "model_extra"):
-                        try:
-                            extra = getattr(section_obj, extra_name)
-                        except AttributeError:
-                            extra = None
-                        if isinstance(extra, Mapping):
-                            payload.update(extra)
-            return payload if isinstance(payload, Mapping) else {}
-
-        algo_cfg = _resolve_nested(cfg_obj, "algo")
-        actions_payload = _normalise_section(_resolve_nested(algo_cfg, "actions"))
-        wrapper_payload = _normalise_section(_resolve_nested(algo_cfg, "action_wrapper"))
-
-        overrides: dict[str, object] = {}
-        long_only_flag = False
-
-        def _update_overrides(payload: Mapping[str, Any]) -> None:
-            nonlocal long_only_flag
-            if not payload:
-                return
-            if "long_only" in payload:
-                long_only_flag = _coerce_bool(payload.get("long_only"))
-            if "max_asset_weight" in payload and payload.get("max_asset_weight") is not None:
-                value = payload.get("max_asset_weight")
-                try:
-                    overrides["max_asset_weight"] = float(value)
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(f"Invalid max_asset_weight value: {value!r}") from exc
-
-        _update_overrides(actions_payload)
-        _update_overrides(wrapper_payload)
-
-        return overrides, long_only_flag
 
     action_overrides, long_only_flag = _extract_action_overrides_from_cfg(cfg)
 
@@ -5575,6 +5580,11 @@ def main():
             print("[WARN] Skipping final validation: evaluation split is empty.")
         else:
 
+            # Same action-space settings the training envs were built with,
+            # read from the same config.
+            eval_bins_vol = _extract_bins_vol_from_cfg(cfg, default=EXPECTED_VOLUME_BINS)
+            eval_action_overrides, eval_long_only = _extract_action_overrides_from_cfg(cfg)
+
             def _make_env_val(symbol: str, df: pd.DataFrame):
                 params = best_trial.params.copy()
                 slowest_window = max(
@@ -5668,28 +5678,19 @@ def main():
                 env_val_params.update(sim_config)
                 env_val_params.update(timing_env_kwargs)
                 env_val_params.update(env_runtime_overrides)
-                # BUG: reward_robust_clip_fraction_value, bins_vol, action_overrides and
-                # long_only_flag are bound inside objective(), not inside main(). Reaching
-                # this validation-env factory raises NameError. Left as-is pending a
-                # decision on how main() should obtain them; see docs/AUDIT_2026-09.md
-                # section 9.2.
-                if (
-                    reward_robust_clip_fraction_value is not None  # noqa: F821
-                    and math.isfinite(reward_robust_clip_fraction_value)  # noqa: F821
-                    and reward_robust_clip_fraction_value > 0.0  # noqa: F821
-                ):
-                    env_val_params["reward_robust_clip_fraction"] = (
-                        reward_robust_clip_fraction_value  # noqa: F821
-                    )
+                # No robust-clip fraction is forced here.  In objective() the value
+                # starts as None and is read back off the first env that is built, so
+                # letting TradingEnv resolve it from the same reward_clip config gives
+                # the evaluation env the same number.
                 env = TradingEnv(
                     df, **env_val_params, leak_guard=LeakGuard(LeakConfig(**leak_guard_kwargs))
                 )
                 setattr(env, "selected_symbol", symbol)
                 env = _wrap_action_space_if_needed(
                     env,
-                    bins_vol=bins_vol,  # noqa: F821
-                    action_overrides=action_overrides,  # noqa: F821
-                    long_only=long_only_flag,  # noqa: F821
+                    bins_vol=eval_bins_vol,
+                    action_overrides=eval_action_overrides,
+                    long_only=eval_long_only,
                 )
                 return env
 

@@ -362,3 +362,46 @@ if sys.platform == "win32":
 # Re-add tests directory to sys.path to resolve sibling imports in test modules
 if str(TESTS) not in sys.path:
     sys.path.append(str(TESTS))
+
+
+# ---------------------------------------------------------------------------
+# Feature-layout guard
+# ---------------------------------------------------------------------------
+# feature_config.make_layout() rewrites the module-level FEATURES_LAYOUT and
+# N_FEATURES in place.  Several tests call it with a narrower layout
+# (ext_norm_dim=21, ext_norm_dim=28, max_num_tokens=16) and never put the
+# default back, so every later test in the same worker sizes its buffers from
+# the wrong total.
+#
+# That is not a cosmetic mismatch: obs_builder.build_observation_vector writes
+# through typed memoryviews with bounds checking off, so an out_features array
+# shorter than the vector it writes runs past the end of the allocation and
+# corrupts the heap.  Under pytest-xdist the worker dies with
+# "double free or corruption" / "Fatal Python error: Aborted", which can in
+# turn take the whole run down with an xdist INTERNALERROR.
+#
+# Snapshot the layout once and restore it after every test.
+try:
+    import feature_config as _feature_config
+
+    _DEFAULT_FEATURES_LAYOUT = [dict(block) for block in _feature_config.FEATURES_LAYOUT]
+    _DEFAULT_N_FEATURES = _feature_config.N_FEATURES
+    _DEFAULT_EXT_NORM_DIM = _feature_config.EXT_NORM_DIM
+except Exception:  # pragma: no cover - feature_config is always importable in-tree
+    _feature_config = None
+
+
+@pytest.fixture(autouse=True)
+def _restore_feature_layout():
+    """Put feature_config's global layout back after each test."""
+    yield
+    if _feature_config is None:
+        return
+    if (
+        _feature_config.N_FEATURES != _DEFAULT_N_FEATURES
+        or _feature_config.EXT_NORM_DIM != _DEFAULT_EXT_NORM_DIM
+        or _feature_config.FEATURES_LAYOUT != _DEFAULT_FEATURES_LAYOUT
+    ):
+        _feature_config.FEATURES_LAYOUT = [dict(block) for block in _DEFAULT_FEATURES_LAYOUT]
+        _feature_config.N_FEATURES = _DEFAULT_N_FEATURES
+        _feature_config.EXT_NORM_DIM = _DEFAULT_EXT_NORM_DIM
