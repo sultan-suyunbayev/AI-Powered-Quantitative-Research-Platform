@@ -21,7 +21,10 @@ def test_feature_pipeline_uses_train_mask(tmp_path):
 
     stats = pipe.stats["feat"]
     train_values = df.loc[df["wf_role"] == "train", "feat"]
-    assert stats["mean"] == pytest.approx(train_values.mean())
+    # The pipeline shifts each symbol's series by one bar before fitting, so a
+    # bar never enters its own statistics; the first training row drops out.
+    shifted_train = df["feat"].shift(1).loc[df["wf_role"] == "train"].dropna()
+    assert stats["mean"] == pytest.approx(shifted_train.mean())
     assert pipe.metadata["train_rows_total"] == len(train_values)
 
     saved = tmp_path / "pipeline.json"
