@@ -6,8 +6,18 @@ from types import ModuleType, SimpleNamespace
 
 import yaml
 
-# Provide a lightweight ``requests`` stub if the dependency is absent.
-if "requests" not in sys.modules:  # pragma: no cover - test environment helper
+# Provide a lightweight ``requests`` stub only if the dependency is genuinely
+# absent. Testing ``"requests" not in sys.modules`` instead asks whether anything
+# has imported it *yet*, which is true whenever this module is collected early --
+# and the stub then stands in for the real library for the rest of the worker.
+try:  # pragma: no cover - requests is pinned in every supported install
+    import requests as _requests  # noqa: F401
+
+    _REQUESTS_AVAILABLE = True
+except ModuleNotFoundError:  # pragma: no cover - test environment helper
+    _REQUESTS_AVAILABLE = False
+
+if not _REQUESTS_AVAILABLE:  # pragma: no cover - test environment helper
 
     class _DummyResponse:
         def __init__(self, payload):

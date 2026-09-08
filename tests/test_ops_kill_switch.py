@@ -57,7 +57,15 @@ def test_alert_command_runs_once(tmp_path):
     flag = tmp_path / "flag"
     state = tmp_path / "state.json"
     out = tmp_path / "out.txt"
-    cmd = ["bash", "-c", f'echo run >> "{out}"']
+    # No shell: bash is not dependable on a Windows runner, and a Windows path
+    # inside a double-quoted shell string is a run of backslash escapes. The
+    # path travels through argv instead.
+    cmd = [
+        sys.executable,
+        "-c",
+        "import sys; open(sys.argv[1], 'a', encoding='utf-8').write('run\\n')",
+        str(out),
+    ]
     cfg = {
         "flag_path": str(flag),
         "state_path": str(state),

@@ -20,6 +20,8 @@ This test suite provides 100% coverage of the fix to ensure:
 5. Integration with Twin Critics + VF Clipping
 """
 
+import math
+
 import pytest
 
 torch = pytest.importorskip("torch")
@@ -129,7 +131,10 @@ class TestVFClippingScalingLogic:
             expected_clip_delta, rel=1e-6
         ), f"With ret_std={ret_std}, clip_delta should be {expected_clip_delta}, got {clip_delta}"
 
-        # Simulate value clipping
+        # Simulate value clipping. Seeded: the assertion below is about the
+        # distribution, and an unseeded draw of 100 crosses any flat threshold
+        # near the mean often enough to matter.
+        torch.manual_seed(0)
         old_values_raw = torch.zeros(100, 1)  # Old values at 0
         new_values_raw = torch.randn(100, 1) * ret_std  # New values with std=ret_std
 
@@ -144,12 +149,19 @@ class TestVFClippingScalingLogic:
         clipped_count = (clipped_values_raw != new_values_raw).sum().item()
         clipped_percentage = clipped_count / len(new_values_raw) * 100
 
-        # With correct scaling, clipping percentage should be ~84% (standard normal clipped at ±0.2σ)
-        # Before fix with small clip_delta, it would be 99%+ (effectively frozen!)
-        # After fix, clipping percentage should be reasonable (<95%)
-        assert (
-            clipped_percentage < 95.0
-        ), f"Clipping percentage should be <95%, got {clipped_percentage:.1f}% (value network may be frozen!)"
+        # Once clip_delta scales with ret_std, the clipped fraction is just
+        # P(|z| > clip_range_vf) for a standard normal: 84.1% at 0.2, 92.0% at
+        # 0.1. Before the fix clip_delta stayed at clip_range_vf against raw
+        # values, which is 0.002 sigma at ret_std=100 -- effectively frozen.
+        # A flat "<95%" ceiling does not separate those two: 92.0% is the
+        # correct answer for clip_range_vf=0.1 and sits within sampling noise
+        # of 95%.
+        expected_fraction = math.erfc(clip_range_vf / math.sqrt(2.0))
+        assert clipped_percentage / 100.0 == pytest.approx(expected_fraction, abs=0.08), (
+            f"Clipping should track P(|z| > {clip_range_vf}) = "
+            f"{expected_fraction * 100:.1f}%, got {clipped_percentage:.1f}% "
+            f"(value network may be frozen!)"
+        )
 
     # ========== TEST 4: Verify clipping percentage with different ret_std values ==========
 

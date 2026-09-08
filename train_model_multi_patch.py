@@ -165,6 +165,14 @@ def _export_training_dataset(
         {str(s) for s in combined.get("symbol", pd.Series(dtype=str)).dropna().unique()}
     )
 
+    try:
+        dataset_path_recorded = os.path.relpath(dataset_path, start=Path.cwd())
+    except ValueError:
+        # Windows has no relative path between two drives, and relpath raises
+        # rather than returning the absolute one. Record where the dataset is
+        # instead of failing the export over how to spell it.
+        dataset_path_recorded = str(Path(dataset_path).resolve())
+
     summary = {
         "rows": int(len(combined)),
         "by_role": role_counts,
@@ -172,7 +180,7 @@ def _export_training_dataset(
         "coverage": coverage,
         "split_version": split_version,
         "inferred_test": bool(inferred_test),
-        "dataset_path": os.path.relpath(dataset_path, start=Path.cwd()),
+        "dataset_path": dataset_path_recorded,
     }
 
     summary_path = artifacts_dir / "training_summary.json"

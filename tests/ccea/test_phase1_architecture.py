@@ -61,6 +61,19 @@ class TestCanonicalAgentStack:
 class TestDeprecatedAgentStack:
     """Tests verifying ccea.agent emits deprecation warnings."""
 
+    @pytest.fixture(autouse=True)
+    def _allow_deprecated_import(self, monkeypatch):
+        """ccea.agent blocks its own import when $CI is set.
+
+        The guardrail names CCEA_ALLOW_DEPRECATED as the bypass for migration
+        testing, which is what these tests are. Without it they fail on every
+        CI runner and pass on every developer machine.
+        """
+        monkeypatch.setenv("CCEA_ALLOW_DEPRECATED", "true")
+        monkeypatch.delenv("CCEA_STRICT_DEPRECATION", raising=False)
+        for name in [m for m in list(sys.modules) if m.startswith("ccea.agent")]:
+            monkeypatch.delitem(sys.modules, name, raising=False)
+
     def test_ccea_agent_emits_deprecation_warning(self):
         """ccea.agent import must emit DeprecationWarning."""
         # Clear any cached import

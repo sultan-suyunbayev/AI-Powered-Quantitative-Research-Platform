@@ -152,7 +152,10 @@ class TestShutdownManagerCallbackExecution:
 
         assert len(execution_times) == 2
         time_diff = execution_times[1] - execution_times[0]
-        assert time_diff >= 0.1  # Grace period should add delay
+        # The grace period is 0.1 s. asyncio's timer has ~15.6 ms granularity on
+        # Windows, so the sleep can finish a hair early by the loop's own clock;
+        # what this checks is that a grace period was waited at all.
+        assert time_diff >= 0.08
 
     async def test_callback_exception_does_not_stop_sequence(self):
         """Test exception in callback doesn't stop shutdown sequence."""
