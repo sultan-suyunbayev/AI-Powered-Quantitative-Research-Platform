@@ -442,6 +442,11 @@ jobs:
   coverage:
     name: Coverage analysis (ubuntu-latest)
     runs-on: ubuntu-latest
+    # The whole suite again, for a number that is tracked and not enforced
+    # (--cov-fail-under=0, and the step ends in `|| true`). Worth having on the
+    # trunk; not worth 25 minutes of runner time on every push to a branch,
+    # where it competes with the two platform jobs that do gate the merge.
+    if: github.event_name == 'push'
     timeout-minutes: 90
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
