@@ -103,7 +103,7 @@ def mock_env():
 def mock_model():
     """Mock model for callback tests."""
     model = Mock()
-    model.logger = Mock()
+    model.set_logger(Mock())  # logger is a read-only property on BaseAlgorithm
     model.logger.record = Mock()
     model.policy = Mock()
     model.policy.optimizer = Mock()
