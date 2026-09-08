@@ -100,6 +100,7 @@ def create_valid_inputs(**overrides):
         "risk_off_flag": False,
         "cash": 10000.0,
         "units": 0.5,
+        "signal_pos": 0.0,
         "last_vol_imbalance": 0.1,
         "last_trade_intensity": 5.0,
         "last_realized_spread": 0.001,
@@ -118,46 +119,53 @@ def build_obs_with_inputs(**kwargs):
     Build observation vector with given inputs.
 
     Returns:
-        np.ndarray: Observation vector (63 features)
+        np.ndarray: Observation vector, _N_FEATURES long
     """
     inputs = create_valid_inputs(**kwargs)
 
     # Create norm_cols and output array
     norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
+    norm_cols_validity = np.ones(_EXT_DIM, dtype=np.uint8)
     obs = np.zeros(_N_FEATURES, dtype=np.float32)
 
+    # Named arguments: the signature grew signal_pos, norm_cols_validity and
+    # enable_validity_flags, and a positional call silently shifts values into
+    # the wrong parameters.
     build_observation_vector(
-        float(inputs["price"]),
-        float(inputs["prev_price"]),
-        float(inputs["log_volume_norm"]),
-        float(inputs["rel_volume"]),
-        float(inputs["ma5"]),
-        float(inputs["ma20"]),
-        float(inputs["rsi14"]),
-        float(inputs["macd"]),
-        float(inputs["macd_signal"]),
-        float(inputs["momentum"]),
-        float(inputs["atr"]),
-        float(inputs["cci"]),
-        float(inputs["obv"]),
-        float(inputs["bb_lower"]),
-        float(inputs["bb_upper"]),
-        float(inputs["is_high_importance"]),
-        float(inputs["time_since_event"]),
-        float(inputs["fear_greed_value"]),
-        bool(inputs["has_fear_greed"]),
-        bool(inputs["risk_off_flag"]),
-        float(inputs["cash"]),
-        float(inputs["units"]),
-        float(inputs["last_vol_imbalance"]),
-        float(inputs["last_trade_intensity"]),
-        float(inputs["last_realized_spread"]),
-        float(inputs["last_agent_fill_ratio"]),
-        int(inputs["token_id"]),
-        int(inputs["max_num_tokens"]),
-        int(inputs["num_tokens"]),
-        norm_cols,
-        obs,
+        price=float(inputs["price"]),
+        prev_price=float(inputs["prev_price"]),
+        log_volume_norm=float(inputs["log_volume_norm"]),
+        rel_volume=float(inputs["rel_volume"]),
+        ma5=float(inputs["ma5"]),
+        ma20=float(inputs["ma20"]),
+        rsi14=float(inputs["rsi14"]),
+        macd=float(inputs["macd"]),
+        macd_signal=float(inputs["macd_signal"]),
+        momentum=float(inputs["momentum"]),
+        atr=float(inputs["atr"]),
+        cci=float(inputs["cci"]),
+        obv=float(inputs["obv"]),
+        bb_lower=float(inputs["bb_lower"]),
+        bb_upper=float(inputs["bb_upper"]),
+        is_high_importance=float(inputs["is_high_importance"]),
+        time_since_event=float(inputs["time_since_event"]),
+        fear_greed_value=float(inputs["fear_greed_value"]),
+        has_fear_greed=bool(inputs["has_fear_greed"]),
+        risk_off_flag=bool(inputs["risk_off_flag"]),
+        cash=float(inputs["cash"]),
+        units=float(inputs["units"]),
+        signal_pos=float(inputs["signal_pos"]),
+        last_vol_imbalance=float(inputs["last_vol_imbalance"]),
+        last_trade_intensity=float(inputs["last_trade_intensity"]),
+        last_realized_spread=float(inputs["last_realized_spread"]),
+        last_agent_fill_ratio=float(inputs["last_agent_fill_ratio"]),
+        token_id=int(inputs["token_id"]),
+        max_num_tokens=int(inputs["max_num_tokens"]),
+        num_tokens=int(inputs["num_tokens"]),
+        norm_cols_values=norm_cols,
+        norm_cols_validity=norm_cols_validity,
+        enable_validity_flags=True,
+        out_features=obs,
     )
 
     return obs
@@ -185,18 +193,20 @@ def get_bb_features(obs):
     """
     Extract Bollinger Bands related features from observation.
 
-    Feature layout (63-feature observation):
-    - bb_squeeze: index 29 (in microstructure block, measures volatility regime)
-    - bb_position: index 31 (in bollinger block, price position within bands)
-    - bb_width: index 32 (in bollinger block, normalized band width)
+    Positions follow the current feature layout:
+    - bb_squeeze: second entry of the microstructure block (volatility regime)
+    - bb_position: first entry of the bb_context block (price within the bands)
+    - bb_width: second entry of the bb_context block (normalised band width)
 
     Returns:
         dict: {feature_name: value}
     """
     return {
-        "bb_squeeze": obs[29],
-        "bb_position": obs[31],
-        "bb_width": obs[32],
+        # Offsets come from the layout: bb_squeeze is the second microstructure
+        # feature, bb_position and bb_width_norm are the bb_context block.
+        "bb_squeeze": obs[_block_start("microstructure") + 1],
+        "bb_position": obs[_block_start("bb_context")],
+        "bb_width": obs[_block_start("bb_context") + 1],
     }
 
 

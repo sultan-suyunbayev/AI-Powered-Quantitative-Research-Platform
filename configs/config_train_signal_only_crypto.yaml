@@ -1,0 +1,230 @@
+# =============================================================================
+# SIGNAL-ONLY TRAINING CONFIG FOR CRYPTO SPOT
+# =============================================================================
+# Bar-level execution, signal-only rewards (no real execution costs).
+# This is the crypto baseline that config_train_signal_only_stocks.yaml adapts
+# for US equities; keep the two in step when either changes.
+#
+# Key features:
+# - reward_signal_only: true (no execution costs in rewards)
+# - 24/7 market, no session calendar and no trading-hours filter
+# - Binance spot taker/maker fees for cost awareness
+# - Liquidity seasonality enabled (crypto has a strong hour-of-week profile)
+# =============================================================================
+
+mode: train
+run_id: signal-only-crypto
+logs_dir: logs
+artifacts_dir: artifacts
+
+# ASSET CLASS CONFIGURATION
+asset_class: crypto
+data_vendor: binance
+market: spot
+
+# =============================================================================
+# DATA CONFIGURATION
+# =============================================================================
+data:
+  timeframe: "4h"
+  asset_class: crypto
+  processed_dir: "data/processed"
+
+  # Data source: local files
+  source: local
+  paths:
+    - "data/klines/*.parquet"
+
+  # Training window
+  train_start_ts: 1609459200     # 2021-01-01T00:00:00Z
+  train_end_ts: 1719792000       # 2024-07-01T00:00:00Z
+
+  val_start_ts: 1719792000       # 2024-07-01T00:00:00Z
+  val_end_ts: 1735689600         # 2025-01-01T00:00:00Z
+
+  test_start_ts: 1735689600      # 2025-01-01T00:00:00Z
+  test_end_ts: 1759276800        # 2025-10-01T00:00:00Z
+
+# =============================================================================
+# EXECUTION CONFIGURATION
+# =============================================================================
+execution:
+  enabled: true
+  mode: bar
+
+execution_profile: MKT_OPEN_NEXT_H1
+execution_params:
+  limit_offset_bps: 0.0
+  ttl_steps: 0
+  tif: GTC    # Crypto venues keep resting orders across sessions
+
+# =============================================================================
+# ENVIRONMENT CONFIGURATION
+# =============================================================================
+env:
+  decision_timing: CLOSE_TO_OPEN
+
+  # No-trade windows disabled for signal-only
+  no_trade:
+    enabled: false
+    policy: ignore
+
+  warmup:
+    min_bars: 60
+
+# =============================================================================
+# MODEL CONFIGURATION
+# =============================================================================
+model:
+  algo: "ppo"
+
+  # OPTIMIZER - AdaptiveUPGD
+  optimizer_class: AdaptiveUPGD
+  optimizer_kwargs:
+    lr: 2.0e-4
+    weight_decay: 0.001
+    sigma: 0.001
+    beta_utility: 0.999
+    beta1: 0.9
+    beta2: 0.999
+    adaptive_noise: true
+
+  # VGS Configuration
+  vgs:
+    enabled: true
+    accumulation_steps: 4
+    warmup_steps: 5
+    clip_threshold: 10.0
+    min_scaling_factor: 0.1      # VGS v3.2: prevent gradient blocking
+    variance_cap: 50.0           # VGS v3.2: cap extreme variance
+
+  params:
+    learning_rate: 2.0e-4
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.12
+    clip_range_vf: 0.7
+    ent_coef: 0.005
+    vf_coef: 1.0
+    max_grad_norm: 0.5
+    n_steps: 512
+    n_epochs: 4
+    batch_size: 64
+    seed: 42
+
+    # Twin critics + distributional
+    use_twin_critics: true
+    num_atoms: 15
+    v_min: -5.0
+    v_max: 5.0
+
+    # CVaR risk-aware learning
+    cvar_alpha: 0.05
+    cvar_weight: 0.15
+
+    turnover_penalty_coef: 0.001
+    reward_return_clip: 5.0
+    reward_cap: 5.0
+
+# =============================================================================
+# ACTION SPACE
+# =============================================================================
+algo:
+  actions:
+    long_only: true              # Spot without margin cannot go short
+  action_wrapper:
+    fixed_type: MARKET
+    lock_price_offset: true
+    fixed_price_offset_ticks: 0
+    lock_ttl: true
+    fixed_ttl_steps: 0
+    bins_vol: 4
+    max_asset_weight: 1.0
+
+# =============================================================================
+# FEES CONFIGURATION (Signal-only awareness)
+# =============================================================================
+# Note: Signal-only doesn't apply fees to rewards, but tracks them for learning
+fees:
+  structure: flat
+  maker_bps: 1.0
+  taker_bps: 1.0
+  half_spread_bps: 2.5
+  impact_coeff: 0.0
+
+# =============================================================================
+# SLIPPAGE CONFIGURATION
+# =============================================================================
+slippage:
+  k: 0.8
+  min_half_spread_bps: 0.0
+  default_spread_bps: 5.0
+
+# =============================================================================
+# LATENCY CONFIGURATION
+# =============================================================================
+latency:
+  base_ms: 0                     # No latency for signal-only
+  jitter_ms: 0
+
+# =============================================================================
+# RISK CONFIGURATION (Disabled for signal-only)
+# =============================================================================
+risk:
+  enabled: false                 # No risk limits in signal-only mode
+
+no_trade:
+  enabled: false                 # No trade restrictions
+
+# =============================================================================
+# TRAINING CONFIGURATION
+# =============================================================================
+training:
+  total_timesteps: 100000        # Light training for signal generation
+  n_envs: 4
+  eval_freq: 5000
+  save_freq: 10000
+  log_interval: 100
+
+  # TensorBoard
+  tensorboard: true
+  tb_log_name: "signal_only_crypto"
+
+# =============================================================================
+# SEASONALITY
+# =============================================================================
+use_seasonality: true
+liquidity_seasonality_path: data/latency/liquidity_latency_seasonality.json
+
+# =============================================================================
+# EXCHANGE CONFIGURATION
+# =============================================================================
+exchange:
+  vendor: binance
+  market_type: SPOT
+
+# =============================================================================
+# COMPONENTS CONFIGURATION
+# =============================================================================
+components:
+  market_data:
+    target: impl_offline_data:OfflineCSVBarSource
+    params:
+      paths: ["data/klines/*.parquet"]
+      timeframe: "4h"
+  executor:
+    target: impl_sim_executor:SimExecutor
+    params:
+      symbol: "BTCUSDT"
+  feature_pipe:
+    target: feature_pipe:FeaturePipe
+    params: {}
+  policy:
+    target: strategies.momentum:MomentumStrategy
+    params: {}
+  risk_guards:
+    target: impl_risk_basic:RiskBasicImpl
+    params: {}
+  backtest_engine:
+    target: service_backtest:ServiceBacktest
+    params: {}

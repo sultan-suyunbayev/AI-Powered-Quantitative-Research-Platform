@@ -561,14 +561,6 @@ class TestWeightedVarianceWithMixedValues:
         assert math.isfinite(result) or math.isnan(result)
 
 
-class TestPatchRandForTests:
-    """Tests for _patch_rand_for_tests function."""
-
-    def test_patch_rand(self):
-        """_patch_rand_for_tests function exists and is callable."""
-        assert callable(dppo._patch_rand_for_tests)
-
-
 class TestComputeGroupedExplainedVarianceEmptyInput:
     """Tests for compute_grouped_explained_variance with empty inputs."""
 
