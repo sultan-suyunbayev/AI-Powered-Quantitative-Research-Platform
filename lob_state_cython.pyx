@@ -621,14 +621,14 @@ cpdef tuple run_full_step_logic_cython(
     cdef char[::1] taker_is_agent_all_arr = workspace.taker_is_agent_all_arr
     cdef long long[::1] fully_executed_ids_all_arr = workspace.fully_executed_ids_all_arr
     
-    assert prices_all_arr.c_contiguous, "Workspace prices_all_arr must be C-contiguous"
-    assert volumes_all_arr.c_contiguous, "Workspace volumes_all_arr must be C-contiguous"
-    assert maker_ids_all_arr.c_contiguous, "Workspace maker_ids_all_arr must be C-contiguous"
-    assert maker_is_agent_all_arr.c_contiguous, "Workspace maker_is_agent_all_arr must be C-contiguous"
-    assert timestamps_all_arr.c_contiguous, "Workspace timestamps_all_arr must be C-contiguous"
-    assert is_buy_side_all_arr.c_contiguous, "Workspace is_buy_side_all_arr must be C-contiguous"
-    assert taker_is_agent_all_arr.c_contiguous, "Workspace taker_is_agent_all_arr must be C-contiguous"
-    assert fully_executed_ids_all_arr.c_contiguous, "Workspace fully_executed_ids_all_arr must be C-contiguous"
+    assert prices_all_arr.is_c_contig(), "Workspace prices_all_arr must be C-contiguous"
+    assert volumes_all_arr.is_c_contig(), "Workspace volumes_all_arr must be C-contiguous"
+    assert maker_ids_all_arr.is_c_contig(), "Workspace maker_ids_all_arr must be C-contiguous"
+    assert maker_is_agent_all_arr.is_c_contig(), "Workspace maker_is_agent_all_arr must be C-contiguous"
+    assert timestamps_all_arr.is_c_contig(), "Workspace timestamps_all_arr must be C-contiguous"
+    assert is_buy_side_all_arr.is_c_contig(), "Workspace is_buy_side_all_arr must be C-contiguous"
+    assert taker_is_agent_all_arr.is_c_contig(), "Workspace taker_is_agent_all_arr must be C-contiguous"
+    assert fully_executed_ids_all_arr.is_c_contig(), "Workspace fully_executed_ids_all_arr must be C-contiguous"
     
     # ==============================================================
     # 1. ФАЗА ПРЕДЛОЖЕНИЯ (PROPOSE)

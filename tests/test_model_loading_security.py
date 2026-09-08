@@ -179,17 +179,17 @@ class TestInferSignalsSecurityPolicy:
             importlib.reload(infer_signals)
 
             with mock.patch.object(infer_signals, "MODELS_DIR", models_dir):
-                # Note: This will fail because state_dict doesn't have .eval()
-                # The actual infer_signals expects a model object
-                # This test verifies the security check passes, not full functionality
+                # A weights-only checkpoint deserialises to a state_dict, not to a
+                # callable Module, so _load_model still has nothing _predict could
+                # run -- and it now says so. What this test pins down is narrower:
+                # the fail-closed policy must not be what rejected it.
                 try:
                     result = infer_signals._load_model()
-                    # If we get here, secure loading worked
+                except RuntimeError as exc:
+                    assert "SECURITY" not in str(exc)
+                    assert "state_dict" in str(exc)
+                else:
                     assert result[0] == "torch"
-                except AttributeError:
-                    # Expected - state_dict doesn't have .eval()
-                    # Security check passed, model loading logic issue
-                    pass
 
 
 class TestModelConversionUtility:

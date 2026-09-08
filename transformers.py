@@ -1044,6 +1044,8 @@ class OnlineFeatureTransformer:
             st["ohlc_bars"].append(ohlc_bar)
 
         # Вычисляем и сохраняем Taker Buy Ratio
+        # Ratio этого бара, или None если бар не принёс объёмных данных.
+        current_taker_buy_ratio: Optional[float] = None
         if volume is not None and taker_buy_base is not None and volume > 0:
             # Добавляем clamping на случай аномальных данных (taker_buy_base > volume)
             # Нормальный диапазон: [0.0, 1.0]
@@ -1067,6 +1069,7 @@ class OnlineFeatureTransformer:
                 )
 
             st["taker_buy_ratios"].append(taker_buy_ratio)
+            current_taker_buy_ratio = taker_buy_ratio
 
         # Вычисляем и сохраняем Volume Delta для CVD
         # CVD формула: buy_volume - sell_volume
@@ -1677,9 +1680,12 @@ class OnlineFeatureTransformer:
         if st["taker_buy_ratios"]:
             ratio_list = list(st["taker_buy_ratios"])
 
-            # Добавляем текущее значение taker_buy_ratio
-            if ratio_list:
-                feats["taker_buy_ratio"] = float(ratio_list[-1])
+            # Текущее значение taker_buy_ratio -- только если этот бар его дал.
+            # Дек пополняется лишь на барах с volume и taker_buy_base, поэтому
+            # ratio_list[-1] на баре без объёмных данных возвращал ratio
+            # предыдущего бара, выдавая устаревшее значение за текущее.
+            if current_taker_buy_ratio is not None:
+                feats["taker_buy_ratio"] = float(current_taker_buy_ratio)
             else:
                 feats["taker_buy_ratio"] = float("nan")
 
