@@ -161,7 +161,10 @@ def test_signal_quality_filter_disabled_keeps_policy_path() -> None:
     worker.process(_make_bar(1, 100.0, 100.0))
 
     assert policy.call_count == 1
-    assert logger.messages == []
+    # The worker also logs TTL_BYPASSED in bar mode; only the signal-quality
+    # reason must be absent.
+    assert [m for m, _args, _kw in logger.messages if "SIGNAL_QUALITY" in m] == []
+    assert [m for m, _args, _kw in logger.messages if m == cfg.log_reason] == []
 
 
 def test_signal_quality_filter_skips_logging_when_disabled_flag() -> None:
@@ -191,4 +194,7 @@ def test_signal_quality_filter_skips_logging_when_disabled_flag() -> None:
     worker.process(bars[-1])
 
     assert policy.call_count == 1
-    assert logger.messages == []
+    # The worker also logs TTL_BYPASSED in bar mode; only the signal-quality
+    # reason must be absent.
+    assert [m for m, _args, _kw in logger.messages if "SIGNAL_QUALITY" in m] == []
+    assert [m for m, _args, _kw in logger.messages if m == cfg.log_reason] == []
