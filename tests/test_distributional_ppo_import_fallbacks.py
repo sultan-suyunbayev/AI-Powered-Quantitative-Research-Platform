@@ -39,29 +39,29 @@ class TestImportFallbacks:
         # or be empty dict if not
         assert isinstance(aliases, dict)
 
-    def test_patch_rand_for_tests_called(self):
-        """Verify _patch_rand_for_tests was called during import."""
-        import distributional_ppo
+    def test_import_does_not_patch_torch(self):
+        """Importing the module must not change torch's behaviour.
+
+        It used to detect pytest and replace torch.rand with a version shifted
+        into [0.5, 1.0], which meant the tested code was not the shipped code
+        and every other test in the process drew from a skewed distribution.
+        """
+        import distributional_ppo  # noqa: F401
         import torch
 
-        # In test environment, patch should be applied
-        assert hasattr(torch, "_distributional_rand_patch")
+        assert not hasattr(torch, "_distributional_rand_patch")
+        assert not hasattr(distributional_ppo, "_patch_rand_for_tests")
 
 
-class TestPatchRandForTests:
-    """Test _patch_rand_for_tests function."""
+class TestTorchRandIsUntouched:
+    """torch.rand must span its full range under the test runner."""
 
-    def test_patch_creates_bounded_rand(self):
-        """Verify patched rand produces values in [0.5, 1.0]."""
+    def test_rand_covers_the_whole_range(self):
         import torch
 
-        # Generate many samples
-        samples = torch.rand(1000)
-
-        # All should be >= 0.5 (due to patch)
-        # Note: patch shifts to [0.5, 1.0]
-        assert samples.min().item() >= 0.5 - 1e-6
-        assert samples.max().item() <= 1.0 + 1e-6
+        samples = torch.rand(4096)
+        assert samples.min().item() < 0.5, "torch.rand is being shifted"
+        assert 0.0 <= samples.min().item() and samples.max().item() <= 1.0
 
 
 class TestModuleLevelConstants:

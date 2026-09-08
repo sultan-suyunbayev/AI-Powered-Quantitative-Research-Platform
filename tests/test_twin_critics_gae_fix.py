@@ -25,6 +25,7 @@ Test Coverage:
 """
 
 import numpy as np
+import torch
 import pytest
 
 torch = pytest.importorskip("torch")
@@ -37,13 +38,16 @@ from custom_policy_patch1 import CustomActorCriticPolicy
 
 
 def _rollout_callback(model):
-    """Build a real callback for a direct collect_rollouts() call.
+    """Prepare the model for a direct collect_rollouts() call and return a callback.
 
-    model._init_callback is the method that constructs one; handing the bound
-    method straight to collect_rollouts makes it call .on_rollout_start() on a
-    function object.
+    _setup_learn is what primes _last_obs, _last_episode_starts and
+    ep_info_buffer and hands back a real callback; model._init_callback is only
+    the method that constructs one, and passing the bound method straight to
+    collect_rollouts makes it call .on_rollout_start() on a function object.
     """
-    callback = model._init_callback(None)
+    _total, callback = model._setup_learn(
+        total_timesteps=model.n_steps, callback=None, reset_num_timesteps=False
+    )
     callback.on_training_start({}, {})
     return callback
 
@@ -201,10 +205,6 @@ class TestTwinCriticsGAEFix:
         """Test that VF clipping buffer still contains quantiles from first critic."""
         model = twin_critics_model
 
-        # Initialize environment (required for collect_rollouts)
-        model._last_obs = model.env.reset()
-        model._last_episode_starts = np.ones((model.env.num_envs,), dtype=bool)
-
         # Collect rollouts
         model.collect_rollouts(
             model.env,
@@ -236,10 +236,6 @@ class TestTwinCriticsGAEFix:
         """
         model = twin_critics_model
         policy = model.policy
-
-        # Initialize environment (required for collect_rollouts)
-        model._last_obs = model.env.reset()
-        model._last_episode_starts = np.ones((model.env.num_envs,), dtype=bool)
 
         # Track the values used for GAE computation
         gae_values = []
@@ -275,10 +271,6 @@ class TestTwinCriticsGAEFix:
     def test_terminal_bootstrap_uses_predict_values(self, twin_critics_model):
         """Test that terminal bootstrap value uses predict_values (min for Twin Critics)."""
         model = twin_critics_model
-
-        # Initialize environment (required for collect_rollouts)
-        model._last_obs = model.env.reset()
-        model._last_episode_starts = np.ones((model.env.num_envs,), dtype=bool)
 
         # Track calls to predict_values
         predict_values_calls = []
@@ -380,17 +372,16 @@ class TestTwinCriticsGAEIntegration:
         ), f"Expected at least 512 timesteps, got {model.num_timesteps}"
 
         # Verify that rollout buffer was used
-        assert model.rollout_buffer.pos == 0, "Rollout buffer should be reset after training"
+        # collect_rollouts resets the buffer at the START of each collection, so
+        # after learn() returns it holds the last rollout rather than being empty.
+        assert model.rollout_buffer.pos == model.n_steps
+        assert model.rollout_buffer.full
 
         print("✓ Full training loop completed successfully with Twin Critics")
 
     def test_advantages_are_finite_and_reasonable(self, twin_critics_model):
         """Test that computed advantages are finite and within reasonable bounds."""
         model = twin_critics_model
-
-        # Initialize environment (required for collect_rollouts)
-        model._last_obs = model.env.reset()
-        model._last_episode_starts = np.ones((model.env.num_envs,), dtype=bool)
 
         # Collect rollouts
         model.collect_rollouts(
@@ -400,9 +391,13 @@ class TestTwinCriticsGAEIntegration:
             n_rollout_steps=model.n_steps,
         )
 
-        # Compute returns and advantages
+        # Compute returns and advantages. last_values must be a tensor: sb3
+        # clones it, and the buffer stores plain numpy arrays.
+        last_values = torch.as_tensor(
+            model.rollout_buffer.values[-1], dtype=torch.float32, device=model.device
+        )
         model.rollout_buffer.compute_returns_and_advantage(
-            last_values=model.rollout_buffer.values[-1],
+            last_values=last_values,
             dones=np.zeros(model.env.num_envs),
         )
 
