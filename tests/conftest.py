@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import sys
 import types
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -287,6 +288,69 @@ class _MockSession:
 
 
 _requests_stub.Session = _MockSession
+
+
+class _PreparedRequest:
+    """The part of requests.PreparedRequest that assembles a URL.
+
+    ``rest_budget._make_cache_key`` uses it to canonicalise a request into a
+    cache key; nothing here performs I/O, so the network guard has no reason to
+    take it away.
+    """
+
+    def __init__(self, method: str, url: str, params=None):
+        self.method = (method or "GET").upper()
+        parts = urllib.parse.urlsplit(url or "")
+        query = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        if params:
+            items = params.items() if hasattr(params, "items") else params
+            for key, value in items:
+                if value is None:
+                    continue
+                if isinstance(value, (list, tuple, set)):
+                    query.extend((str(key), str(item)) for item in value)
+                else:
+                    query.append((str(key), str(value)))
+        self.url = urllib.parse.urlunsplit(
+            (
+                parts.scheme,
+                parts.netloc,
+                parts.path,
+                urllib.parse.urlencode(query, doseq=True),
+                parts.fragment,
+            )
+        )
+        self.headers: dict = {}
+        self.body = None
+
+
+class _Request:
+    """Enough of requests.Request to prepare a URL."""
+
+    def __init__(self, method: str = "GET", url: str = "", params=None, **kwargs):
+        self.method = method
+        self.url = url
+        self.params = params
+        self.kwargs = kwargs
+
+    def prepare(self) -> _PreparedRequest:
+        return _PreparedRequest(self.method, self.url, self.params)
+
+
+class _Response:
+    """Placeholder for annotations; the guard never produces one."""
+
+    status_code = 0
+    headers: dict = {}
+    url = ""
+
+    def json(self):  # pragma: no cover - nothing in the tests calls it
+        raise RuntimeError("requests.Response is not available in the test environment")
+
+
+_requests_stub.Request = _Request
+_requests_stub.PreparedRequest = _PreparedRequest
+_requests_stub.Response = _Response
 
 # Create stub exceptions module for testing
 _requests_exceptions_stub = types.ModuleType("requests.exceptions")

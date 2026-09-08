@@ -171,10 +171,12 @@ def test_normalize_ohlcv_generic_timestamp_with_warning(sample_binance_data):
         warnings.simplefilter("always")
         result = _normalize_ohlcv(df, "test_generic_timestamp.parquet")
 
-        # Check that a warning was issued
-        assert len(w) == 1
-        assert "Using generic time column 'timestamp'" in str(w[0].message)
-        assert "ambiguous whether open or close time" in str(w[0].message)
+        # Check that a warning was issued. Select it rather than counting the
+        # block: simplefilter("always") also records anything pandas emits.
+        ambiguity = [warning for warning in w if "generic time column" in str(warning.message)]
+        assert len(ambiguity) == 1
+        assert "Using generic time column 'timestamp'" in str(ambiguity[0].message)
+        assert "ambiguous whether open or close time" in str(ambiguity[0].message)
 
     # Check that timestamp is used as-is (treated as close_time)
     # NOTE: This is NOT correct if timestamp was actually open_time!
@@ -264,9 +266,10 @@ def test_inconsistency_detection_generic_timestamp():
         warnings.simplefilter("always")
         result = _normalize_ohlcv(df, "problematic.parquet")
 
-        # Should warn about ambiguity
-        assert len(w) == 1
-        assert "ambiguous" in str(w[0].message).lower()
+        # Should warn about ambiguity -- selected, not counted: the block also
+        # records whatever pandas emits.
+        ambiguity = [warning for warning in w if "ambiguous" in str(warning.message).lower()]
+        assert len(ambiguity) == 1
 
     # Timestamp is used as-is (treated as close_time), but it's actually open_time!
     # This causes a 1-bar (4h) shift
@@ -429,6 +432,7 @@ def test_recommendation_use_explicit_column_names():
         warnings.simplefilter("always")
         result_bad = _normalize_ohlcv(df_bad, "bad_data.parquet")
 
-        # Should warn
-        assert len(w) == 1
-        assert "ambiguous" in str(w[0].message).lower()
+        # Should warn -- selected, not counted: the block also records whatever
+        # pandas emits.
+        ambiguity = [warning for warning in w if "ambiguous" in str(warning.message).lower()]
+        assert len(ambiguity) == 1
