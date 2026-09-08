@@ -14,6 +14,25 @@ import pandas as pd
 from typing import Any
 from pathlib import Path
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
 
 # Mock minimal environment and state for testing
 class MockState:
@@ -177,7 +196,7 @@ class MockMediator:
 
     def _extract_norm_cols(self, row: Any) -> np.ndarray:
         """Imported from mediator.py (обновлено для 4h таймфрейма, 21 признак)."""
-        norm_cols = np.zeros(21, dtype=np.float32)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
 
         # Original 8 (обновлено для 4h)
         norm_cols[0] = self._get_safe_float(row, "cvd_24h", 0.0)
@@ -288,8 +307,8 @@ class MockMediator:
         risk_off_flag = fear_greed_value < 25.0
 
         token_id = getattr(state, "token_index", 0)
-        max_num_tokens = 1
-        num_tokens = 1
+        max_num_tokens = _MAX_TOKENS
+        num_tokens = _MAX_TOKENS
 
         try:
             build_observation_vector(
@@ -375,7 +394,7 @@ def test_observation_size_and_non_zero():
     obs = mediator._build_observation(row=row, state=state, mark_price=mark_price)
 
     # Check size
-    assert obs.shape == (63,), f"Expected obs.shape=(63,), got {obs.shape}"
+    assert obs.shape == (_N_FEATURES,), f"Expected obs.shape=(_N_FEATURES,), got {obs.shape}"
 
     # Check that more than 35 values are non-zero (>60% should be populated)
     non_zero_count = np.count_nonzero(obs)
@@ -536,7 +555,9 @@ def test_observations_in_training_env():
 
         obs = mediator._build_observation(row=row, state=state, mark_price=mark_price)
 
-        assert obs.shape == (63,), f"Step {step_idx}: Expected shape (63,), got {obs.shape}"
+        assert obs.shape == (
+            _N_FEATURES,
+        ), f"Step {step_idx}: Expected shape (_N_FEATURES,), got {obs.shape}"
         non_zero_count = np.count_nonzero(obs)
         assert non_zero_count > 15, f"Step {step_idx}: Expected >15 non-zero, got {non_zero_count}"
 
@@ -569,7 +590,7 @@ def test_observation_works_without_indicators():
     obs = mediator._build_observation(row=row, state=state, mark_price=mark_price)
 
     # Should still return correct size (fallback to defaults)
-    assert obs.shape == (63,), f"Expected shape (63,), got {obs.shape}"
+    assert obs.shape == (_N_FEATURES,), f"Expected shape (_N_FEATURES,), got {obs.shape}"
 
     # Should have at least some basic values (price, cash, units)
     assert obs[0] > 0, "obs[0] (price) should be non-zero"

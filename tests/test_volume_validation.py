@@ -24,6 +24,25 @@ import numpy as np
 import pytest
 import math
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
 
 # Try to import the compiled Cython module
 try:
@@ -63,15 +82,18 @@ class TestVolumeMetricValidation:
             "risk_off_flag": False,
             "cash": 10000.0,
             "units": 0.5,
+            "signal_pos": 0.0,
             "last_vol_imbalance": 0.1,
             "last_trade_intensity": 5.0,
             "last_realized_spread": 0.001,
             "last_agent_fill_ratio": 0.95,
             "token_id": 0,
-            "max_num_tokens": 1,
-            "num_tokens": 1,
-            "norm_cols_values": np.zeros(21, dtype=np.float32),
-            "out_features": np.zeros(63, dtype=np.float32),
+            "max_num_tokens": _MAX_TOKENS,
+            "num_tokens": _MAX_TOKENS,
+            "norm_cols_values": np.zeros(_EXT_DIM, dtype=np.float32),
+            "norm_cols_validity": np.ones(_EXT_DIM, dtype=np.uint8),
+            "enable_validity_flags": True,
+            "out_features": np.zeros(_N_FEATURES, dtype=np.float32),
         }
 
     # ========================================================================
@@ -309,7 +331,7 @@ class TestVolumeMetricValidation:
         obs = params["out_features"]
 
         # Validate observation properties
-        assert obs.shape == (63,), f"Expected shape (63,), got {obs.shape}"
+        assert obs.shape == (_N_FEATURES,), f"Expected shape (_N_FEATURES,), got {obs.shape}"
         assert obs[0] == pytest.approx(51234.56), "Price at index 0"
         assert obs[1] == pytest.approx(0.75), "log_volume_norm at index 1"
         assert obs[2] == pytest.approx(0.82), "rel_volume at index 2"
@@ -456,15 +478,18 @@ class TestVolumeMetricErrorMessages:
             "risk_off_flag": False,
             "cash": 10000.0,
             "units": 0.0,
+            "signal_pos": 0.0,
             "last_vol_imbalance": 0.0,
             "last_trade_intensity": 0.0,
             "last_realized_spread": 0.0,
             "last_agent_fill_ratio": 1.0,
             "token_id": 0,
-            "max_num_tokens": 1,
-            "num_tokens": 1,
-            "norm_cols_values": np.zeros(21, dtype=np.float32),
-            "out_features": np.zeros(63, dtype=np.float32),
+            "max_num_tokens": _MAX_TOKENS,
+            "num_tokens": _MAX_TOKENS,
+            "norm_cols_values": np.zeros(_EXT_DIM, dtype=np.float32),
+            "norm_cols_validity": np.ones(_EXT_DIM, dtype=np.uint8),
+            "enable_validity_flags": True,
+            "out_features": np.zeros(_N_FEATURES, dtype=np.float32),
         }
 
     def test_error_message_contains_diagnostic_info(self):

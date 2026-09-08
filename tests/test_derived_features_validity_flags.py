@@ -21,6 +21,26 @@ Test scenarios:
 import numpy as np
 import pytest
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
+
 try:
     from obs_builder import build_observation_vector
 
@@ -48,8 +68,8 @@ def test_price_momentum_uses_validity_flag_when_valid():
     obv = 1000.0
 
     # Observation buffer
-    obs = np.zeros(63, dtype=np.float32)
-    norm_cols = np.zeros(21, dtype=np.float32)
+    obs = np.zeros(_N_FEATURES, dtype=np.float32)
+    norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
 
     # Call observation builder
     build_observation_vector(
@@ -75,19 +95,22 @@ def test_price_momentum_uses_validity_flag_when_valid():
         risk_off_flag=False,
         cash=10000.0,
         units=1.0,
+        signal_pos=0.0,
         last_vol_imbalance=0.0,
         last_trade_intensity=0.0,
         last_realized_spread=0.0,
         last_agent_fill_ratio=1.0,
         token_id=0,
-        max_num_tokens=1,
-        num_tokens=1,
+        max_num_tokens=_MAX_TOKENS,
+        num_tokens=_MAX_TOKENS,
         norm_cols_values=norm_cols,
+        norm_cols_validity=np.ones(_EXT_DIM, dtype=np.uint8),
+        enable_validity_flags=True,
         out_features=obs,
     )
 
     # price_momentum is at index 28
-    price_momentum = obs[28]
+    price_momentum = obs[_block_start("microstructure")]
 
     # Expected: tanh(momentum / (price * 0.01 + 1e-8))
     # = tanh(10.0 / (1000.0 * 0.01 + 1e-8))
@@ -121,8 +144,8 @@ def test_price_momentum_uses_validity_flag_when_invalid():
     obv = 1000.0
 
     # Observation buffer
-    obs = np.zeros(63, dtype=np.float32)
-    norm_cols = np.zeros(21, dtype=np.float32)
+    obs = np.zeros(_N_FEATURES, dtype=np.float32)
+    norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
 
     # Call observation builder
     build_observation_vector(
@@ -148,19 +171,22 @@ def test_price_momentum_uses_validity_flag_when_invalid():
         risk_off_flag=False,
         cash=10000.0,
         units=1.0,
+        signal_pos=0.0,
         last_vol_imbalance=0.0,
         last_trade_intensity=0.0,
         last_realized_spread=0.0,
         last_agent_fill_ratio=1.0,
         token_id=0,
-        max_num_tokens=1,
-        num_tokens=1,
+        max_num_tokens=_MAX_TOKENS,
+        num_tokens=_MAX_TOKENS,
         norm_cols_values=norm_cols,
+        norm_cols_validity=np.ones(_EXT_DIM, dtype=np.uint8),
+        enable_validity_flags=True,
         out_features=obs,
     )
 
     # price_momentum is at index 28
-    price_momentum = obs[28]
+    price_momentum = obs[_block_start("microstructure")]
 
     # Expected: 0.0 (because momentum is NaN → momentum_valid = False)
     assert price_momentum == 0.0, (
@@ -187,8 +213,8 @@ def test_trend_strength_uses_validity_flags_when_both_valid():
     obv = 1000.0
 
     # Observation buffer
-    obs = np.zeros(63, dtype=np.float32)
-    norm_cols = np.zeros(21, dtype=np.float32)
+    obs = np.zeros(_N_FEATURES, dtype=np.float32)
+    norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
 
     # Call observation builder
     build_observation_vector(
@@ -214,19 +240,22 @@ def test_trend_strength_uses_validity_flags_when_both_valid():
         risk_off_flag=False,
         cash=10000.0,
         units=1.0,
+        signal_pos=0.0,
         last_vol_imbalance=0.0,
         last_trade_intensity=0.0,
         last_realized_spread=0.0,
         last_agent_fill_ratio=1.0,
         token_id=0,
-        max_num_tokens=1,
-        num_tokens=1,
+        max_num_tokens=_MAX_TOKENS,
+        num_tokens=_MAX_TOKENS,
         norm_cols_values=norm_cols,
+        norm_cols_validity=np.ones(_EXT_DIM, dtype=np.uint8),
+        enable_validity_flags=True,
         out_features=obs,
     )
 
     # trend_strength is at index 30
-    trend_strength = obs[30]
+    trend_strength = obs[_block_start("microstructure") + 2]
 
     # Expected: tanh((macd - macd_signal) / (price * 0.01 + 1e-8))
     # = tanh((5.0 - 3.0) / (1000.0 * 0.01 + 1e-8))
@@ -262,8 +291,8 @@ def test_trend_strength_zero_when_macd_invalid():
     obv = 1000.0
 
     # Observation buffer
-    obs = np.zeros(63, dtype=np.float32)
-    norm_cols = np.zeros(21, dtype=np.float32)
+    obs = np.zeros(_N_FEATURES, dtype=np.float32)
+    norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
 
     # Call observation builder
     build_observation_vector(
@@ -289,19 +318,22 @@ def test_trend_strength_zero_when_macd_invalid():
         risk_off_flag=False,
         cash=10000.0,
         units=1.0,
+        signal_pos=0.0,
         last_vol_imbalance=0.0,
         last_trade_intensity=0.0,
         last_realized_spread=0.0,
         last_agent_fill_ratio=1.0,
         token_id=0,
-        max_num_tokens=1,
-        num_tokens=1,
+        max_num_tokens=_MAX_TOKENS,
+        num_tokens=_MAX_TOKENS,
         norm_cols_values=norm_cols,
+        norm_cols_validity=np.ones(_EXT_DIM, dtype=np.uint8),
+        enable_validity_flags=True,
         out_features=obs,
     )
 
     # trend_strength is at index 30
-    trend_strength = obs[30]
+    trend_strength = obs[_block_start("microstructure") + 2]
 
     # Expected: 0.0 (because macd is NaN → macd_valid = False)
     assert trend_strength == 0.0, (
@@ -328,8 +360,8 @@ def test_trend_strength_zero_when_macd_signal_invalid():
     obv = 1000.0
 
     # Observation buffer
-    obs = np.zeros(63, dtype=np.float32)
-    norm_cols = np.zeros(21, dtype=np.float32)
+    obs = np.zeros(_N_FEATURES, dtype=np.float32)
+    norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
 
     # Call observation builder
     build_observation_vector(
@@ -355,19 +387,22 @@ def test_trend_strength_zero_when_macd_signal_invalid():
         risk_off_flag=False,
         cash=10000.0,
         units=1.0,
+        signal_pos=0.0,
         last_vol_imbalance=0.0,
         last_trade_intensity=0.0,
         last_realized_spread=0.0,
         last_agent_fill_ratio=1.0,
         token_id=0,
-        max_num_tokens=1,
-        num_tokens=1,
+        max_num_tokens=_MAX_TOKENS,
+        num_tokens=_MAX_TOKENS,
         norm_cols_values=norm_cols,
+        norm_cols_validity=np.ones(_EXT_DIM, dtype=np.uint8),
+        enable_validity_flags=True,
         out_features=obs,
     )
 
     # trend_strength is at index 30
-    trend_strength = obs[30]
+    trend_strength = obs[_block_start("microstructure") + 2]
 
     # Expected: 0.0 (because macd_signal is NaN → macd_signal_valid = False)
     assert trend_strength == 0.0, (
@@ -394,8 +429,8 @@ def test_trend_strength_zero_when_both_invalid():
     obv = 1000.0
 
     # Observation buffer
-    obs = np.zeros(63, dtype=np.float32)
-    norm_cols = np.zeros(21, dtype=np.float32)
+    obs = np.zeros(_N_FEATURES, dtype=np.float32)
+    norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
 
     # Call observation builder
     build_observation_vector(
@@ -421,19 +456,22 @@ def test_trend_strength_zero_when_both_invalid():
         risk_off_flag=False,
         cash=10000.0,
         units=1.0,
+        signal_pos=0.0,
         last_vol_imbalance=0.0,
         last_trade_intensity=0.0,
         last_realized_spread=0.0,
         last_agent_fill_ratio=1.0,
         token_id=0,
-        max_num_tokens=1,
-        num_tokens=1,
+        max_num_tokens=_MAX_TOKENS,
+        num_tokens=_MAX_TOKENS,
         norm_cols_values=norm_cols,
+        norm_cols_validity=np.ones(_EXT_DIM, dtype=np.uint8),
+        enable_validity_flags=True,
         out_features=obs,
     )
 
     # trend_strength is at index 30
-    trend_strength = obs[30]
+    trend_strength = obs[_block_start("microstructure") + 2]
 
     # Expected: 0.0 (because both are NaN)
     assert trend_strength == 0.0, (
@@ -449,8 +487,8 @@ def test_validity_flags_indices():
     prev_price = 1000.0
 
     # Observation buffer
-    obs = np.zeros(63, dtype=np.float32)
-    norm_cols = np.zeros(21, dtype=np.float32)
+    obs = np.zeros(_N_FEATURES, dtype=np.float32)
+    norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
 
     # Call observation builder with all valid indicators
     build_observation_vector(
@@ -476,14 +514,17 @@ def test_validity_flags_indices():
         risk_off_flag=False,
         cash=10000.0,
         units=1.0,
+        signal_pos=0.0,
         last_vol_imbalance=0.0,
         last_trade_intensity=0.0,
         last_realized_spread=0.0,
         last_agent_fill_ratio=1.0,
         token_id=0,
-        max_num_tokens=1,
-        num_tokens=1,
+        max_num_tokens=_MAX_TOKENS,
+        num_tokens=_MAX_TOKENS,
         norm_cols_values=norm_cols,
+        norm_cols_validity=np.ones(_EXT_DIM, dtype=np.uint8),
+        enable_validity_flags=True,
         out_features=obs,
     )
 

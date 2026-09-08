@@ -21,6 +21,25 @@ import numpy as np
 import pytest
 from typing import Any
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
 
 # Test mediator validation methods independently
 class TestMediatorValidation:
@@ -207,8 +226,8 @@ class TestFullPipelineIntegration:
         validated_prev = self._validate_critical_price(prev_price, "prev_price")
 
         # Step 2: obs_builder (should also validate)
-        obs = np.zeros(63, dtype=np.float32)
-        norm_cols = np.zeros(21, dtype=np.float32)
+        obs = np.zeros(_N_FEATURES, dtype=np.float32)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
 
         build_observation_vector(
             price=validated_price,
@@ -233,14 +252,17 @@ class TestFullPipelineIntegration:
             risk_off_flag=False,
             cash=10000.0,
             units=0.5,
+            signal_pos=0.0,
             last_vol_imbalance=0.1,
             last_trade_intensity=5.0,
             last_realized_spread=0.001,
             last_agent_fill_ratio=0.95,
             token_id=0,
-            max_num_tokens=1,
-            num_tokens=1,
+            max_num_tokens=_MAX_TOKENS,
+            num_tokens=_MAX_TOKENS,
             norm_cols_values=norm_cols,
+            norm_cols_validity=np.ones(_EXT_DIM, dtype=np.uint8),
+            enable_validity_flags=True,
             out_features=obs,
         )
 
@@ -266,8 +288,8 @@ class TestFullPipelineIntegration:
             pytest.skip("obs_builder not compiled")
 
         # Simulate bypassing mediator validation (shouldn't happen in prod)
-        obs = np.zeros(63, dtype=np.float32)
-        norm_cols = np.zeros(21, dtype=np.float32)
+        obs = np.zeros(_N_FEATURES, dtype=np.float32)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
 
         # obs_builder should catch this as second defense
         with pytest.raises(ValueError) as exc_info:
@@ -294,14 +316,17 @@ class TestFullPipelineIntegration:
                 risk_off_flag=False,
                 cash=10000.0,
                 units=0.0,
+                signal_pos=0.0,
                 last_vol_imbalance=0.0,
                 last_trade_intensity=0.0,
                 last_realized_spread=0.0,
                 last_agent_fill_ratio=1.0,
                 token_id=0,
-                max_num_tokens=1,
-                num_tokens=1,
+                max_num_tokens=_MAX_TOKENS,
+                num_tokens=_MAX_TOKENS,
                 norm_cols_values=norm_cols,
+                norm_cols_validity=np.ones(_EXT_DIM, dtype=np.uint8),
+                enable_validity_flags=True,
                 out_features=obs,
             )
 

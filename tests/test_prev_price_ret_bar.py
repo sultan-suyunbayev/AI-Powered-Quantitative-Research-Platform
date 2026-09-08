@@ -21,6 +21,28 @@ import pytest
 import numpy as np
 import math
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
+
+_RET_BAR_IDX = _block_start("derived")
+
 try:
     from obs_builder import build_observation_vector
 
@@ -59,15 +81,18 @@ class TestPrevPriceRetBarValidation:
             "risk_off_flag": False,
             "cash": 10000.0,
             "units": 0.1,
+            "signal_pos": 0.0,
             "last_vol_imbalance": 0.05,
             "last_trade_intensity": 0.1,
             "last_realized_spread": 0.001,
             "last_agent_fill_ratio": 0.95,
             "token_id": 0,
-            "max_num_tokens": 10,
-            "num_tokens": 5,
-            "norm_cols_values": np.zeros(5, dtype=np.float32),
-            "out_features": np.zeros(63, dtype=np.float32),
+            "max_num_tokens": _MAX_TOKENS,
+            "num_tokens": _MAX_TOKENS,
+            "norm_cols_values": np.zeros(_EXT_DIM, dtype=np.float32),
+            "norm_cols_validity": np.ones(_EXT_DIM, dtype=np.uint8),
+            "enable_validity_flags": True,
+            "out_features": np.zeros(_N_FEATURES, dtype=np.float32),
         }
 
     # ========================================================================
@@ -173,7 +198,7 @@ class TestPrevPriceRetBarValidation:
         params["prev_price"] = 49500.0
 
         build_observation_vector(**params)
-        ret_bar = params["out_features"][20]  # ret_bar is at index 20 (was 14 pre-v62)
+        ret_bar = params["out_features"][_RET_BAR_IDX]  # ret_bar is at index 20 (was 14 pre-v62)
 
         # Calculate expected value: tanh((50000 - 49500) / (49500 + 1e-8))
         expected = math.tanh((50000.0 - 49500.0) / (49500.0 + 1e-8))
@@ -195,7 +220,7 @@ class TestPrevPriceRetBarValidation:
         params["prev_price"] = 50000.0
 
         build_observation_vector(**params)
-        ret_bar = params["out_features"][14]
+        ret_bar = params["out_features"][_RET_BAR_IDX]
 
         expected = math.tanh((49000.0 - 50000.0) / (50000.0 + 1e-8))
 
@@ -216,7 +241,7 @@ class TestPrevPriceRetBarValidation:
         params["prev_price"] = 50000.0
 
         build_observation_vector(**params)
-        ret_bar = params["out_features"][14]
+        ret_bar = params["out_features"][_RET_BAR_IDX]
 
         assert not math.isnan(ret_bar), "ret_bar should not be NaN"
         assert not math.isinf(ret_bar), "ret_bar should not be Inf"
@@ -234,7 +259,7 @@ class TestPrevPriceRetBarValidation:
         params["prev_price"] = 50000.0
 
         build_observation_vector(**params)
-        ret_bar = params["out_features"][14]
+        ret_bar = params["out_features"][_RET_BAR_IDX]
 
         expected = math.tanh((500000.0 - 50000.0) / (50000.0 + 1e-8))
 
@@ -256,7 +281,7 @@ class TestPrevPriceRetBarValidation:
         params["prev_price"] = 50000.0
 
         build_observation_vector(**params)
-        ret_bar = params["out_features"][14]
+        ret_bar = params["out_features"][_RET_BAR_IDX]
 
         expected = math.tanh((5000.0 - 50000.0) / (50000.0 + 1e-8))
 
@@ -281,7 +306,7 @@ class TestPrevPriceRetBarValidation:
         params["prev_price"] = 0.00001
 
         build_observation_vector(**params)
-        ret_bar = params["out_features"][14]
+        ret_bar = params["out_features"][_RET_BAR_IDX]
 
         expected = math.tanh((0.00002 - 0.00001) / (0.00001 + 1e-8))
 
@@ -301,7 +326,7 @@ class TestPrevPriceRetBarValidation:
         params["prev_price"] = 1.0e9
 
         build_observation_vector(**params)
-        ret_bar = params["out_features"][14]
+        ret_bar = params["out_features"][_RET_BAR_IDX]
 
         expected = math.tanh((1.01e9 - 1.0e9) / (1.0e9 + 1e-8))
 
@@ -321,7 +346,7 @@ class TestPrevPriceRetBarValidation:
         params["prev_price"] = 50000.0
 
         build_observation_vector(**params)
-        ret_bar = params["out_features"][14]
+        ret_bar = params["out_features"][_RET_BAR_IDX]
 
         expected = math.tanh((50000.5 - 50000.0) / (50000.0 + 1e-8))
 
@@ -368,7 +393,7 @@ class TestPrevPriceRetBarValidation:
         expected_ret_bar = math.tanh((51000.0 - 50000.0) / (50000.0 + 1e-8))
 
         # Check index 20 (was 14 in v56)
-        actual_ret_bar = params["out_features"][20]
+        actual_ret_bar = params["out_features"][_RET_BAR_IDX]
 
         assert abs(actual_ret_bar - expected_ret_bar) < 1e-6, (
             f"ret_bar at index 20 should be {expected_ret_bar}, got {actual_ret_bar}. "
@@ -438,7 +463,7 @@ class TestPrevPriceRetBarValidation:
         params["prev_price"] = 49500.0
 
         build_observation_vector(**params)
-        ret_bar = params["out_features"][14]
+        ret_bar = params["out_features"][_RET_BAR_IDX]
 
         assert not math.isnan(ret_bar), "ret_bar should not be NaN"
         assert 0.0 < ret_bar < 0.02, f"ret_bar should be small positive for 1% gain, got {ret_bar}"
@@ -455,7 +480,7 @@ class TestPrevPriceRetBarValidation:
         params["prev_price"] = 50000.0
 
         build_observation_vector(**params)
-        ret_bar = params["out_features"][14]
+        ret_bar = params["out_features"][_RET_BAR_IDX]
 
         assert not math.isnan(ret_bar), "ret_bar should not be NaN during flash crash"
         assert not math.isinf(ret_bar), "ret_bar should not be Inf during flash crash"
@@ -473,7 +498,7 @@ class TestPrevPriceRetBarValidation:
         params["prev_price"] = 50000.0
 
         build_observation_vector(**params)
-        ret_bar = params["out_features"][14]
+        ret_bar = params["out_features"][_RET_BAR_IDX]
 
         assert not math.isnan(ret_bar), "ret_bar should not be NaN in sideways market"
         assert (

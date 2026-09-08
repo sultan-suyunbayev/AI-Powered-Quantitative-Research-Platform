@@ -34,6 +34,26 @@ import numpy as np
 import pytest
 import math
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
+
 try:
     from obs_builder import build_observation_vector
 
@@ -72,19 +92,22 @@ class TestATRValidityFlag:
             "risk_off_flag": False,
             "cash": 10000.0,
             "units": 1.0,
+            "signal_pos": 0.0,
+            "norm_cols_validity": np.ones(_EXT_DIM, dtype=np.uint8),
+            "enable_validity_flags": True,
             "last_vol_imbalance": 0.0,
             "last_trade_intensity": 0.0,
             "last_realized_spread": 0.0,
             "last_agent_fill_ratio": 1.0,
             "token_id": 0,
-            "max_num_tokens": 1,
-            "num_tokens": 1,
+            "max_num_tokens": _MAX_TOKENS,
+            "num_tokens": _MAX_TOKENS,
         }
 
     def test_atr_valid_when_atr_is_valid(self, valid_params):
         """Test 1: When ATR is valid, atr_valid flag = 1.0 and ATR value is stored."""
-        obs = np.zeros(63, dtype=np.float32)
-        norm_cols = np.zeros(21, dtype=np.float32)
+        obs = np.zeros(_N_FEATURES, dtype=np.float32)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
         valid_params["norm_cols_values"] = norm_cols
         valid_params["out_features"] = obs
 
@@ -104,8 +127,8 @@ class TestATRValidityFlag:
         """Test 2: When ATR is NaN, atr_valid flag = 0.0 and fallback is used."""
         valid_params["atr"] = float("nan")  # Simulate warmup period
 
-        obs = np.zeros(63, dtype=np.float32)
-        norm_cols = np.zeros(21, dtype=np.float32)
+        obs = np.zeros(_N_FEATURES, dtype=np.float32)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
         valid_params["norm_cols_values"] = norm_cols
         valid_params["out_features"] = obs
 
@@ -133,8 +156,8 @@ class TestATRValidityFlag:
         """
         valid_params["atr"] = float("nan")  # Simulate warmup period
 
-        obs = np.zeros(63, dtype=np.float32)
-        norm_cols = np.zeros(21, dtype=np.float32)
+        obs = np.zeros(_N_FEATURES, dtype=np.float32)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
         valid_params["norm_cols_values"] = norm_cols
         valid_params["out_features"] = obs
 
@@ -164,8 +187,8 @@ class TestATRValidityFlag:
         """Test 4: When ATR is valid, vol_proxy is calculated with real ATR value."""
         valid_params["atr"] = 15.0  # 1.5% volatility
 
-        obs = np.zeros(63, dtype=np.float32)
-        norm_cols = np.zeros(21, dtype=np.float32)
+        obs = np.zeros(_N_FEATURES, dtype=np.float32)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
         valid_params["norm_cols_values"] = norm_cols
         valid_params["out_features"] = obs
 
@@ -184,8 +207,8 @@ class TestATRValidityFlag:
 
     def test_atr_indices_are_correct(self, valid_params):
         """Test 5: Verify ATR and atr_valid are at correct indices (15 and 16)."""
-        obs = np.zeros(63, dtype=np.float32)
-        norm_cols = np.zeros(21, dtype=np.float32)
+        obs = np.zeros(_N_FEATURES, dtype=np.float32)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
         valid_params["norm_cols_values"] = norm_cols
         valid_params["out_features"] = obs
 
@@ -217,8 +240,8 @@ class TestATRValidityFlag:
             valid_params["prev_price"] = price
             valid_params["atr"] = float("nan")
 
-            obs = np.zeros(63, dtype=np.float32)
-            norm_cols = np.zeros(21, dtype=np.float32)
+            obs = np.zeros(_N_FEATURES, dtype=np.float32)
+            norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
             valid_params["norm_cols_values"] = norm_cols
             valid_params["out_features"] = obs
 
@@ -255,8 +278,8 @@ class TestATRValidityFlag:
             # Make this indicator invalid
             params[indicator_name] = float("nan")
 
-            obs = np.zeros(63, dtype=np.float32)
-            norm_cols = np.zeros(21, dtype=np.float32)
+            obs = np.zeros(_N_FEATURES, dtype=np.float32)
+            norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
             params["norm_cols_values"] = norm_cols
             params["out_features"] = obs
 
@@ -290,8 +313,8 @@ class TestATRValidityFlag:
         warmup_params["bb_lower"] = float("nan")
         warmup_params["bb_upper"] = float("nan")
 
-        obs = np.zeros(63, dtype=np.float32)
-        norm_cols = np.zeros(21, dtype=np.float32)
+        obs = np.zeros(_N_FEATURES, dtype=np.float32)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
         warmup_params["norm_cols_values"] = norm_cols
         warmup_params["out_features"] = obs
 
@@ -363,8 +386,8 @@ class TestATRValidityFlag:
                 params["bb_lower"] = float("nan")
                 params["bb_upper"] = float("nan")
 
-            obs = np.zeros(63, dtype=np.float32)
-            norm_cols = np.zeros(21, dtype=np.float32)
+            obs = np.zeros(_N_FEATURES, dtype=np.float32)
+            norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
             params["norm_cols_values"] = norm_cols
             params["out_features"] = obs
 
