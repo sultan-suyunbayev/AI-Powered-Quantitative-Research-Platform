@@ -851,7 +851,7 @@ class TestConfigurationLoading:
         import yaml
 
         config_path = Path(__file__).parent.parent / "configs" / "config_train_futures.yaml"
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         assert config is not None
@@ -863,7 +863,7 @@ class TestConfigurationLoading:
         import yaml
 
         config_path = Path(__file__).parent.parent / "configs" / "config_futures_unified.yaml"
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         required_sections = ["margin", "funding", "liquidation", "fees", "risk"]
@@ -875,7 +875,7 @@ class TestConfigurationLoading:
         import yaml
 
         config_path = Path(__file__).parent.parent / "configs" / "feature_flags_futures.yaml"
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         assert config is not None

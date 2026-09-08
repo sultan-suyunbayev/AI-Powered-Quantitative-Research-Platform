@@ -142,7 +142,7 @@ class TestConfigurationValidation:
         if not config_path.exists():
             pytest.skip("Config file not found")
 
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         data_config = config.get("data", {})
@@ -188,7 +188,7 @@ class TestConfigurationValidation:
         if not config_path.exists():
             pytest.skip("Config file not found")
 
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         data_config = config.get("data", {})

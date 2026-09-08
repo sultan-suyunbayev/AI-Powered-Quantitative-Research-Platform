@@ -657,7 +657,7 @@ class TestFileAuditStorage:
         """Test that records are stored as JSON Lines."""
         file_storage.append(sample_record)
 
-        with open(file_storage._file_path, "r") as f:
+        with open(file_storage._file_path, "r", encoding="utf-8") as f:
             line = f.readline()
             data = json.loads(line)
             assert data["record_id"] == sample_record.record_id

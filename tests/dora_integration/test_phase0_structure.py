@@ -115,7 +115,7 @@ class TestPhase0InitFiles:
     def test_dora_integration_init_content(self, services_path: Path) -> None:
         """Verify services/dora_integration/__init__.py has required content."""
         init_path = services_path / "dora_integration" / "__init__.py"
-        content = init_path.read_text()
+        content = init_path.read_text(encoding="utf-8")
 
         # Check for required docstring elements
         assert "DORA Integration Layer" in content
@@ -131,7 +131,7 @@ class TestPhase0InitFiles:
     def test_due_diligence_init_content(self, services_path: Path) -> None:
         """Verify due_diligence/__init__.py has correct docstring."""
         init_path = services_path / "dora_integration" / "due_diligence" / "__init__.py"
-        content = init_path.read_text()
+        content = init_path.read_text(encoding="utf-8")
         assert "Due Diligence" in content or "Audit Readiness" in content
 
     def test_incident_interface_init_exists(self, services_path: Path) -> None:
@@ -142,7 +142,7 @@ class TestPhase0InitFiles:
     def test_incident_interface_init_content(self, services_path: Path) -> None:
         """Verify incident_interface/__init__.py has correct docstring."""
         init_path = services_path / "dora_integration" / "incident_interface" / "__init__.py"
-        content = init_path.read_text()
+        content = init_path.read_text(encoding="utf-8")
         assert "Incident" in content
         assert "We notify CLIENTS" in content or "Client" in content
 
@@ -174,7 +174,7 @@ class TestPhase0InitFiles:
     def test_archive_init_content(self, services_path: Path) -> None:
         """Verify archive __init__.py has correct docstring."""
         init_path = services_path / "archive" / "dora_financial_entity" / "__init__.py"
-        content = init_path.read_text()
+        content = init_path.read_text(encoding="utf-8")
         assert "Archived" in content
         assert "Financial Entity" in content or "FE" in content
 
@@ -357,7 +357,7 @@ class TestPhase0MigrationChecklistComplete:
         audit_path = PROJECT_ROOT / "docs" / "migration" / "DORA_IMPORT_AUDIT_PHASE0.md"
         assert audit_path.exists(), "Import audit document missing"
 
-        content = audit_path.read_text()
+        content = audit_path.read_text(encoding="utf-8")
         # Check for key audit sections
         assert "Test File Imports" in content or "test_dora" in content
         assert "Integration Layer Modules" in content

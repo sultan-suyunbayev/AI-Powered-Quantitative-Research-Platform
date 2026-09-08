@@ -20,7 +20,7 @@ class TestPPOTargetFixCodeReview:
         """Load the distributional_ppo.py file."""
         ppo_file = Path(__file__).parent.parent / "distributional_ppo.py"
         assert ppo_file.exists(), f"File not found: {ppo_file}"
-        return ppo_file.read_text()
+        return ppo_file.read_text(encoding="utf-8")
 
     def test_training_quantile_uses_unclipped_target(self, ppo_code):
         """
@@ -224,7 +224,7 @@ class TestPPOTargetFixRegression:
     def ppo_code(self):
         """Load the distributional_ppo.py file."""
         ppo_file = Path(__file__).parent.parent / "distributional_ppo.py"
-        return ppo_file.read_text()
+        return ppo_file.read_text(encoding="utf-8")
 
     def test_old_values_still_clipped(self, ppo_code):
         """

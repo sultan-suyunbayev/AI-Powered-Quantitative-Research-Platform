@@ -240,7 +240,7 @@ class TestSaveLoadPersistence:
             pipe.save(path)
 
             # Read JSON and verify
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             assert data["config"]["asset_class"] == "equity"

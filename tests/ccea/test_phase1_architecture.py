@@ -149,7 +149,7 @@ class TestBuildArtifactZoneSeparation:
 
     def test_cloud_spec_excludes_agent_modules(self, build_script_path: Path):
         """Cloud distribution spec must not include agent modules."""
-        content = build_script_path.read_text()
+        content = build_script_path.read_text(encoding="utf-8")
 
         # Parse the file to find cloud_spec
         tree = ast.parse(content)
@@ -178,7 +178,7 @@ class TestBuildArtifactZoneSeparation:
 
     def test_agent_spec_excludes_cloud_modules(self, build_script_path: Path):
         """Agent distribution spec must not include cloud-specific modules."""
-        content = build_script_path.read_text()
+        content = build_script_path.read_text(encoding="utf-8")
 
         tree = ast.parse(content)
 
@@ -218,7 +218,7 @@ class TestMakefileNoDoublePaths:
 
     def test_makefile_has_zone_targets(self, makefile_path: Path):
         """Makefile must have zone-separated targets."""
-        content = makefile_path.read_text()
+        content = makefile_path.read_text(encoding="utf-8")
 
         assert "dist-cloud" in content, "Makefile must have dist-cloud target"
         assert "dist-agent" in content, "Makefile must have dist-agent target"
@@ -226,7 +226,7 @@ class TestMakefileNoDoublePaths:
 
     def test_makefile_no_legacy_agent_paths(self, makefile_path: Path):
         """Makefile should not reference legacy agent directly."""
-        content = makefile_path.read_text()
+        content = makefile_path.read_text(encoding="utf-8")
 
         # Check for problematic patterns
         # Note: references to docs/archive are OK
@@ -258,7 +258,7 @@ class TestCIWorkflowsNoDoublePaths:
         if not build_workflow.exists():
             pytest.skip("build-and-test.yml not found")
 
-        content = build_workflow.read_text()
+        content = build_workflow.read_text(encoding="utf-8")
 
         # Should reference zone build commands
         # At minimum, should not have ambiguous paths
@@ -284,22 +284,22 @@ class TestDocumentationConsistency:
 
     def test_architecture_references_packages_agent(self, architecture_md: Path):
         """ARCHITECTURE.md must reference packages/agent."""
-        content = architecture_md.read_text()
+        content = architecture_md.read_text(encoding="utf-8")
         assert "packages/agent" in content or "packages.agent" in content
 
     def test_architecture_references_packages_cloud(self, architecture_md: Path):
         """ARCHITECTURE.md must reference packages/cloud."""
-        content = architecture_md.read_text()
+        content = architecture_md.read_text(encoding="utf-8")
         assert "packages/cloud" in content or "packages.cloud" in content
 
     def test_readme_mentions_agent_daemon(self, readme_md: Path):
         """README.md must mention Agent daemon for live trading."""
-        content = readme_md.read_text()
+        content = readme_md.read_text(encoding="utf-8")
         assert "packages.agent.daemon.agentd" in content
 
     def test_readme_script_live_is_development_only(self, readme_md: Path):
         """README.md must mark script_live.py as development-only."""
-        content = readme_md.read_text()
+        content = readme_md.read_text(encoding="utf-8")
         # Check that script_live.py is mentioned in context of development/testing
         script_live_pattern = r"script_live\.py.*(development|testing|dry-run)"
         assert re.search(
@@ -321,17 +321,17 @@ class TestLegacyStacksDocumented:
 
     def test_legacy_docs_covers_ccea_agent(self, legacy_docs_path: Path):
         """Legacy docs must cover ccea.agent deprecation."""
-        content = legacy_docs_path.read_text()
+        content = legacy_docs_path.read_text(encoding="utf-8")
         assert "ccea.agent" in content or "ccea/agent" in content
 
     def test_legacy_docs_covers_ccea_control_plane(self, legacy_docs_path: Path):
         """Legacy docs must cover ccea.control_plane deprecation."""
-        content = legacy_docs_path.read_text()
+        content = legacy_docs_path.read_text(encoding="utf-8")
         assert "ccea.control_plane" in content or "ccea/control_plane" in content
 
     def test_legacy_docs_has_migration_guide(self, legacy_docs_path: Path):
         """Legacy docs must have migration guide."""
-        content = legacy_docs_path.read_text()
+        content = legacy_docs_path.read_text(encoding="utf-8")
         assert "migration" in content.lower()
 
 
@@ -345,16 +345,16 @@ class TestScriptLiveGuard:
 
     def test_script_live_has_deprecation_warning(self, script_live_path: Path):
         """script_live.py must emit deprecation warning."""
-        content = script_live_path.read_text()
+        content = script_live_path.read_text(encoding="utf-8")
         assert "DeprecationWarning" in content
         assert "packages.agent.daemon.agentd" in content
 
     def test_script_live_checks_production_mode(self, script_live_path: Path):
         """script_live.py must check CCEA_PRODUCTION_MODE."""
-        content = script_live_path.read_text()
+        content = script_live_path.read_text(encoding="utf-8")
         assert "CCEA_PRODUCTION_MODE" in content
 
     def test_script_live_has_override_env_var(self, script_live_path: Path):
         """script_live.py must allow override via env var."""
-        content = script_live_path.read_text()
+        content = script_live_path.read_text(encoding="utf-8")
         assert "CCEA_ALLOW_LEGACY_LIVE" in content

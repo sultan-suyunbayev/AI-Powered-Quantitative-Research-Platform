@@ -1292,7 +1292,7 @@ class TestRiskRegistrySummaryAndExport:
         """Test exporting registry for audit."""
         export_path = registry_with_data.export_for_audit()
         assert export_path.exists()
-        with open(export_path, "r") as f:
+        with open(export_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         assert "export_timestamp" in data
         assert "ai_act_compliance_version" in data

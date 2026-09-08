@@ -999,7 +999,7 @@ class TestConfigurationBackwardCompatibility:
             pytest.skip("Asset class defaults not found")
 
         # Verify file is readable and non-empty
-        with open(defaults_path, "r") as f:
+        with open(defaults_path, "r", encoding="utf-8") as f:
             content = f.read()
         assert len(content) > 0, "Asset class defaults file should not be empty"
 
@@ -1012,7 +1012,7 @@ class TestConfigurationBackwardCompatibility:
             pytest.skip("Execution config not found")
 
         # Verify file is readable and non-empty
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             content = f.read()
         assert len(content) > 0, "Execution config file should not be empty"
 
@@ -1025,7 +1025,7 @@ class TestConfigurationBackwardCompatibility:
             pytest.skip("Risk config not found")
 
         # Verify file is readable and non-empty
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             content = f.read()
         assert len(content) > 0, "Risk config file should not be empty"
 

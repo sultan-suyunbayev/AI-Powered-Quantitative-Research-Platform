@@ -813,7 +813,7 @@ class TestDecisionExplainerExport:
             output_path = explainer.export_explanations()
 
             assert output_path.exists()
-            with open(output_path) as f:
+            with open(output_path, encoding="utf-8") as f:
                 data = json.load(f)
                 assert data["total_explanations"] == 1
                 assert len(data["explanations"]) == 1
@@ -879,7 +879,7 @@ class TestDecisionExplainerExport:
 
             output_path = explainer.export_explanations()
 
-            with open(output_path) as f:
+            with open(output_path, encoding="utf-8") as f:
                 data = json.load(f)
 
                 assert "export_timestamp" in data
@@ -1241,7 +1241,7 @@ class TestComplianceIntegration:
             export_path = explainer.export_explanations()
             assert export_path.exists()
 
-            with open(export_path) as f:
+            with open(export_path, encoding="utf-8") as f:
                 data = json.load(f)
                 assert data["total_explanations"] == 5
                 assert "ai_act_reference" in data

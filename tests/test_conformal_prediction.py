@@ -735,7 +735,7 @@ class TestConformalPredictionService:
         assert state_file.exists()
         import json
 
-        with open(state_file) as f:
+        with open(state_file, encoding="utf-8") as f:
             state = json.load(f)
 
         assert "config" in state

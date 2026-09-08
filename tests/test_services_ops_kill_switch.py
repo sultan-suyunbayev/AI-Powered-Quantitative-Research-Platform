@@ -306,7 +306,7 @@ class TestManualReset:
         ops_kill_switch.manual_reset()
 
         assert state_path.exists()
-        data = json.loads(state_path.read_text())
+        data = json.loads(state_path.read_text(encoding="utf-8"))
         assert data["counters"]["rest"] == 0
 
 
@@ -344,7 +344,7 @@ class TestStatePersistence:
         ops_kill_switch.record_error("rest")
 
         assert state_path.exists()
-        data = json.loads(state_path.read_text())
+        data = json.loads(state_path.read_text(encoding="utf-8"))
         assert data["counters"]["rest"] == 1
 
     def test_flag_file_created_when_tripped(self, tmp_path):

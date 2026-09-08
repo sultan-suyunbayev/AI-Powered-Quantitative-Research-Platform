@@ -729,7 +729,7 @@ class TestHumanOversightSystem:
 
         assert report_path.exists()
 
-        with open(report_path) as f:
+        with open(report_path, encoding="utf-8") as f:
             report = json.load(f)
 
         assert "ai_act_article" in report
@@ -793,7 +793,7 @@ class TestHumanOversightSystem:
         state_file = tmp_path / "oversight" / "oversight_state.json"
         assert state_file.exists()
 
-        with open(state_file) as f:
+        with open(state_file, encoding="utf-8") as f:
             state_data = json.load(f)
 
         assert state_data["state"] == "stopped"
@@ -1026,7 +1026,7 @@ class TestIntegrationScenarios:
         # Export audit report
         report_path = oversight.export_audit_report()
 
-        with open(report_path) as f:
+        with open(report_path, encoding="utf-8") as f:
             report = json.load(f)
 
         # Verify report structure

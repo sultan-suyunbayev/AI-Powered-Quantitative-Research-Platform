@@ -156,7 +156,7 @@ class TestExportToFile:
             assert path.exists()
 
             # Verify content
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 content = json.load(f)
             assert "records" in content
 

@@ -481,7 +481,7 @@ class TestExport:
         assert json_file.exists()
 
         # Verify JSON structure
-        with open(json_file) as f:
+        with open(json_file, encoding="utf-8") as f:
             data = json.load(f)
             assert "metadata" in data
             assert "sections" in data
@@ -493,7 +493,7 @@ class TestExport:
         output_path = doc_generator.export(ExportFormat.HTML, temp_output_dir)
 
         assert Path(output_path).exists()
-        with open(output_path) as f:
+        with open(output_path, encoding="utf-8") as f:
             content = f.read()
             assert "<html" in content
             assert "Technical Documentation" in content

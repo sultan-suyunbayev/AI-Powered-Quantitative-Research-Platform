@@ -312,7 +312,7 @@ class TestTelemetryBuffer:
         assert output_path.exists()
 
         # Verify content
-        lines = output_path.read_text().strip().split("\n")
+        lines = output_path.read_text(encoding="utf-8").strip().split("\n")
         assert len(lines) == 3
         for line in lines:
             data = json.loads(line)

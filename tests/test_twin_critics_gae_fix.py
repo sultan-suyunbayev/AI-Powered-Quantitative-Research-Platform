@@ -36,6 +36,18 @@ from distributional_ppo import DistributionalPPO
 from custom_policy_patch1 import CustomActorCriticPolicy
 
 
+def _rollout_callback(model):
+    """Build a real callback for a direct collect_rollouts() call.
+
+    model._init_callback is the method that constructs one; handing the bound
+    method straight to collect_rollouts makes it call .on_rollout_start() on a
+    function object.
+    """
+    callback = model._init_callback(None)
+    callback.on_training_start({}, {})
+    return callback
+
+
 @pytest.fixture
 def simple_env():
     """Create a simple test environment with continuous action space."""
@@ -196,7 +208,7 @@ class TestTwinCriticsGAEFix:
         # Collect rollouts
         model.collect_rollouts(
             model.env,
-            model._init_callback,
+            _rollout_callback(model),
             model.rollout_buffer,
             n_rollout_steps=model.n_steps,
         )
@@ -244,7 +256,7 @@ class TestTwinCriticsGAEFix:
             # Collect rollouts
             model.collect_rollouts(
                 model.env,
-                model._init_callback,
+                _rollout_callback(model),
                 model.rollout_buffer,
                 n_rollout_steps=model.n_steps,
             )
@@ -283,7 +295,7 @@ class TestTwinCriticsGAEFix:
             # Collect rollouts (this includes terminal bootstrap)
             model.collect_rollouts(
                 model.env,
-                model._init_callback,
+                _rollout_callback(model),
                 model.rollout_buffer,
                 n_rollout_steps=model.n_steps,
             )
@@ -383,7 +395,7 @@ class TestTwinCriticsGAEIntegration:
         # Collect rollouts
         model.collect_rollouts(
             model.env,
-            model._init_callback,
+            _rollout_callback(model),
             model.rollout_buffer,
             n_rollout_steps=model.n_steps,
         )

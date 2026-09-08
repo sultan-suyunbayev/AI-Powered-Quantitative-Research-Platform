@@ -189,11 +189,11 @@ class TestStrategy:
         assert (result.output_dir / "blobs" / "sha256").exists()
 
         # Check oci-layout content
-        oci_layout = json.loads((result.output_dir / "oci-layout").read_text())
+        oci_layout = json.loads((result.output_dir / "oci-layout").read_text(encoding="utf-8"))
         assert oci_layout["imageLayoutVersion"] == "1.0.0"
 
         # Check index.json
-        index = json.loads((result.output_dir / "index.json").read_text())
+        index = json.loads((result.output_dir / "index.json").read_text(encoding="utf-8"))
         assert index["schemaVersion"] == 2
         assert len(index["manifests"]) == 1
 
@@ -263,13 +263,13 @@ class TestStrategy:
         result = builder.build(config)
 
         # Check index.json has annotations
-        index = json.loads((result.output_dir / "index.json").read_text())
+        index = json.loads((result.output_dir / "index.json").read_text(encoding="utf-8"))
         manifest_ref = index["manifests"][0]
 
         # Read manifest
         manifest_hash = manifest_ref["digest"].split(":")[1]
         manifest_path = result.output_dir / "blobs" / "sha256" / manifest_hash
-        manifest = json.loads(manifest_path.read_text())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
         assert "env" in manifest["annotations"]
         assert manifest["annotations"]["env"] == "test"

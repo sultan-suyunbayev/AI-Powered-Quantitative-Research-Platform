@@ -797,7 +797,7 @@ class TestDataGovernanceFramework:
 
         assert Path(output_path).exists()
 
-        with open(output_path) as f:
+        with open(output_path, encoding="utf-8") as f:
             report = json.load(f)
 
         assert "export_date" in report

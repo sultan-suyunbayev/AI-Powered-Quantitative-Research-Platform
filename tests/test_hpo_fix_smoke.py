@@ -14,7 +14,7 @@ from pathlib import Path
 def test_objective_function_validation_check():
     """Verify that objective function has validation data check."""
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     # Find the objective function
     objective_match = re.search(
@@ -43,7 +43,7 @@ def test_objective_function_validation_check():
 def test_objective_uses_val_data_not_test():
     """Verify that objective function uses val_data, not test_data."""
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     # Find the evaluation phase data assignment in objective function
     # It should be around line 3970-3980
@@ -79,7 +79,7 @@ def test_objective_uses_val_data_not_test():
 def test_eval_phase_name_is_val():
     """Verify that eval_phase_name is set to 'val' in objective function."""
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     # Look for eval_phase_name assignment in objective function
     # Should be: eval_phase_name = "val"
@@ -112,7 +112,7 @@ def test_eval_phase_name_is_val():
 def test_has_critical_comments():
     """Verify that critical comments about data leakage are present."""
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     required_keywords = [
         ("CRITICAL", "Critical warning keyword"),
@@ -142,7 +142,7 @@ def test_final_eval_uses_test_data():
     This is the ONLY place where test data should be used.
     """
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     # Look for the final evaluation section (after HPO)
     # Should have: final_eval_data = test_data_by_token if test_data_by_token else val_data_by_token
@@ -162,7 +162,7 @@ def test_final_eval_uses_test_data():
 def test_val_stats_path_naming():
     """Verify that validation stats are saved with 'val' naming, not 'test'."""
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     # In the objective function, should use val_stats_path, not test_stats_path
     if "val_stats_path" in content:

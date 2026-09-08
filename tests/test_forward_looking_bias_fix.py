@@ -206,7 +206,7 @@ class TestTimingProfilesUseSafeDelays(unittest.TestCase):
         if not os.path.exists(timing_path):
             self.skipTest(f"{timing_path} not found")
 
-        with open(timing_path, "r") as f:
+        with open(timing_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         profiles = config.get("profiles", {})
@@ -227,7 +227,7 @@ class TestTimingProfilesUseSafeDelays(unittest.TestCase):
         if not os.path.exists(legacy_path):
             self.skipTest(f"{legacy_path} not found")
 
-        with open(legacy_path, "r") as f:
+        with open(legacy_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         leakguard_config = config.get("leakguard", {})

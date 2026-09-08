@@ -91,7 +91,7 @@ def test_build_adv_split_uses_config(tmp_path, monkeypatch, symbol):
     out_path = apply_split_tag(adv_base, "v99-train")
     assert out_path.exists()
 
-    payload = json.loads(out_path.read_text())
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
     meta = payload["meta"]
     assert meta["split"] == {"name": "sample", "version": "v99-train"}
     assert meta["data_window"]["actual"]["start_ms"] == start_ms
@@ -141,7 +141,7 @@ def test_refresh_fees_split_output(tmp_path, monkeypatch):
 
     out_path = apply_split_tag(fees_base, "v2")
     assert out_path.exists()
-    payload = json.loads(out_path.read_text())
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
     meta = payload["metadata"]
     assert meta["split"] == {"name": "sample", "version": "v2"}
     assert meta["data_window"]["actual"]["end"] == "2019-04-01T00:00:00Z"
@@ -199,7 +199,7 @@ def test_build_hourly_seasonality_split(tmp_path, monkeypatch):
 
     out_path = apply_split_tag(output_base, "v-season")
     assert out_path.exists()
-    payload = json.loads(out_path.read_text())
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
     meta = payload["metadata"]
     assert meta["split"] == {"name": "sample", "version": "v-season"}
     assert meta["data_window"]["config"]["end"] == "2021-05-01T00:00:00Z"
@@ -257,7 +257,7 @@ def test_build_spread_seasonality_split(tmp_path, monkeypatch):
 
     out_path = apply_split_tag(output_base, "v-spread")
     assert out_path.exists()
-    payload = json.loads(out_path.read_text())
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
     meta = payload["metadata"]
     assert meta["split"] == {"name": "sample", "version": "v-spread"}
     assert meta["data_window"]["config"]["start"] == "2022-07-01T00:00:00Z"

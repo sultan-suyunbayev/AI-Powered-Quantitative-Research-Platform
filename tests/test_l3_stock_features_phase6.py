@@ -649,10 +649,9 @@ class TestBackwardCompatibilityCrypto:
 
         # The guard itself doesn't distinguish asset class,
         # but it should only be applied in equity trading paths
-        # Verify PDTGuard exists and has expected interface
-        assert hasattr(guard, "check_trade_allowed") or hasattr(
-            guard, "can_trade"
-        ), "PDTGuard should have trade check method"
+        # Verify PDTGuard exists and has the interface an equity path would use.
+        assert hasattr(guard, "can_execute_day_trade"), "PDTGuard should gate day trades"
+        assert hasattr(guard, "check_position_close"), "PDTGuard should see closes"
         # Note: Full integration test requires trading path setup
         # Tech Debt: docs/reports/TECH_DEBT_REGISTRY.md#testing-pdt-integration
 

@@ -182,7 +182,7 @@ class TestRunFunction:
 
             # Verify file saved
             assert os.path.exists(out_path)
-            with open(out_path, "r") as f:
+            with open(out_path, "r", encoding="utf-8") as f:
                 saved = json.load(f)
             assert saved == symbols
 

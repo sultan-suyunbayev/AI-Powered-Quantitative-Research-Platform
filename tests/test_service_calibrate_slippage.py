@@ -270,7 +270,7 @@ def test_run_csv_format(sample_trades):
         assert os.path.exists(out_path)
 
         # Verify JSON can be loaded
-        with open(out_path) as f:
+        with open(out_path, encoding="utf-8") as f:
             loaded = json.load(f)
             assert loaded["k"] == report["k"]
 

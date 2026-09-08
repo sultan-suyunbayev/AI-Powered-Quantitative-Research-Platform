@@ -639,7 +639,7 @@ class TestAssessmentExecution:
         assert expected_path.exists()
 
         # Verify content
-        with open(expected_path) as f:
+        with open(expected_path, encoding="utf-8") as f:
             data = json.load(f)
         assert data["report_id"] == report.report_id
 
@@ -921,7 +921,7 @@ class TestEventLogging:
         log_path = Path(initialized_assessment.config.log_path)
         log_files = list(log_path.glob("*.jsonl"))
 
-        with open(log_files[0]) as f:
+        with open(log_files[0], encoding="utf-8") as f:
             line = f.readline()
             event = json.loads(line)
 

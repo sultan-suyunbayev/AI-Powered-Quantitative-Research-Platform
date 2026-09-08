@@ -225,7 +225,7 @@ class TestRequestUpdateConfig:
             config_path = Path(tmpdir) / "runtime_config.json"
             assert config_path.exists()
 
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 saved = json.load(f)
             assert saved["config"]["max_position_size"] == 1000
             assert saved["change_class"] == "NON_IMPACTING"

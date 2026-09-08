@@ -563,7 +563,7 @@ def test_run_dry_run(sample_data):
             report = run(cfg)
 
             # Config should NOT be updated
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 updated = yaml.safe_load(f)
 
             # Should still have original value

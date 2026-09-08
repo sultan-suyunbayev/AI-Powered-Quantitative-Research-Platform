@@ -518,7 +518,7 @@ class TestMetricsIO:
 
             # Check file exists
             if os.path.exists(agg._metrics_path):
-                with open(agg._metrics_path, "r") as f:
+                with open(agg._metrics_path, "r", encoding="utf-8") as f:
                     lines = f.readlines()
                     assert len(lines) > 0
 

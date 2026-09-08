@@ -166,7 +166,7 @@ class TestForexConfigurationFiles:
 
     def test_config_train_forex_valid_yaml(self, config_train_forex_path: Path):
         """Test that forex training config is valid YAML."""
-        with open(config_train_forex_path, "r") as f:
+        with open(config_train_forex_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         assert isinstance(config, dict)
         assert "mode" in config
@@ -174,7 +174,7 @@ class TestForexConfigurationFiles:
 
     def test_config_backtest_forex_valid_yaml(self, config_backtest_forex_path: Path):
         """Test that forex backtest config is valid YAML."""
-        with open(config_backtest_forex_path, "r") as f:
+        with open(config_backtest_forex_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         assert isinstance(config, dict)
         assert "mode" in config
@@ -182,19 +182,19 @@ class TestForexConfigurationFiles:
 
     def test_config_train_forex_asset_class(self, config_train_forex_path: Path):
         """Test that training config has correct asset class."""
-        with open(config_train_forex_path, "r") as f:
+        with open(config_train_forex_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         assert config.get("asset_class") == "forex"
 
     def test_config_backtest_forex_asset_class(self, config_backtest_forex_path: Path):
         """Test that backtest config has correct asset class."""
-        with open(config_backtest_forex_path, "r") as f:
+        with open(config_backtest_forex_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         assert config.get("asset_class") == "forex"
 
     def test_config_train_forex_has_data_section(self, config_train_forex_path: Path):
         """Test that training config has required data section."""
-        with open(config_train_forex_path, "r") as f:
+        with open(config_train_forex_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         assert "data" in config
         data = config["data"]
@@ -203,7 +203,7 @@ class TestForexConfigurationFiles:
 
     def test_config_train_forex_has_env_section(self, config_train_forex_path: Path):
         """Test that training config has required env section."""
-        with open(config_train_forex_path, "r") as f:
+        with open(config_train_forex_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         assert "env" in config
         env = config["env"]
@@ -212,7 +212,7 @@ class TestForexConfigurationFiles:
 
     def test_config_backtest_forex_has_slippage_section(self, config_backtest_forex_path: Path):
         """Test that backtest config has slippage configuration."""
-        with open(config_backtest_forex_path, "r") as f:
+        with open(config_backtest_forex_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         assert "slippage" in config
         slippage = config["slippage"]
@@ -220,7 +220,7 @@ class TestForexConfigurationFiles:
 
     def test_config_backtest_forex_has_dealer_simulation(self, config_backtest_forex_path: Path):
         """Test that backtest config has OTC dealer simulation."""
-        with open(config_backtest_forex_path, "r") as f:
+        with open(config_backtest_forex_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         assert "dealer_simulation" in config
         dealer = config["dealer_simulation"]
@@ -229,7 +229,7 @@ class TestForexConfigurationFiles:
 
     def test_config_forex_leverage_reasonable(self, config_train_forex_path: Path):
         """Test that forex leverage is within reasonable bounds."""
-        with open(config_train_forex_path, "r") as f:
+        with open(config_train_forex_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         leverage = config.get("env", {}).get("leverage", 30.0)
         # Retail forex typically 30:1 to 50:1 (US/EU regulations)
@@ -237,7 +237,7 @@ class TestForexConfigurationFiles:
 
     def test_config_forex_pairs_list(self, config_backtest_forex_path: Path):
         """Test that backtest config has valid pairs list."""
-        with open(config_backtest_forex_path, "r") as f:
+        with open(config_backtest_forex_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         pairs = config.get("data", {}).get("pairs", [])
         assert len(pairs) > 0, "No pairs specified"
@@ -842,7 +842,7 @@ class TestEndToEndIntegration:
         """Test loading config and creating wrapper with its values."""
         from wrappers.forex_env import ForexEnvWrapper
 
-        with open(config_train_forex_path, "r") as f:
+        with open(config_train_forex_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         env_config = config.get("env", {})

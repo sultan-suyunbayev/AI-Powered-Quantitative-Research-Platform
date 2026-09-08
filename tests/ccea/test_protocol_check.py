@@ -333,7 +333,7 @@ class TestRealProtocolSchema:
         """The actual protocol_messages.schema.json should be valid."""
         schema_path = schemas_dir / "protocol_messages.schema.json"
         if schema_path.exists():
-            with open(schema_path) as f:
+            with open(schema_path, encoding="utf-8") as f:
                 schema = json.load(f)
 
             result = validate_protocol_allowlist(schema)

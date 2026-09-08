@@ -282,7 +282,7 @@ dependencies = [
         assert digest.startswith("sha256:")
 
         # Verify JSON is valid
-        data = json.loads(output.read_text())
+        data = json.loads(output.read_text(encoding="utf-8"))
         assert data["bomFormat"] == "CycloneDX"
 
     def test_write_spdx_json(self, sample_source, tmp_path):
@@ -300,7 +300,7 @@ dependencies = [
 
         assert output.exists()
 
-        data = json.loads(output.read_text())
+        data = json.loads(output.read_text(encoding="utf-8"))
         assert data["spdxVersion"] == "SPDX-2.3"
 
 
@@ -327,7 +327,7 @@ class TestConvenienceFunction:
         assert output.exists()
         assert digest.startswith("sha256:")
 
-        data = json.loads(output.read_text())
+        data = json.loads(output.read_text(encoding="utf-8"))
         assert data["bomFormat"] == "CycloneDX"
 
         # Check component is present
