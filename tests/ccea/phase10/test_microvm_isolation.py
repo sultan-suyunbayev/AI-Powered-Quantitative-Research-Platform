@@ -6,6 +6,7 @@ Phase 10: Enterprise isolation.
 """
 
 import json
+import socket
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch, PropertyMock
@@ -69,8 +70,9 @@ class TestMicroVMConfiguration:
         )
         sandbox = CloudResearchSandbox(config)
 
-        # These are the expected default paths
-        assert "/etc/ccea/firecracker" in str(Path("/etc/ccea/firecracker"))
+        # These are the expected default paths. str() of a PurePath is
+        # backslash-separated on Windows; the claim here is about the POSIX text.
+        assert "/etc/ccea/firecracker" in Path("/etc/ccea/firecracker").as_posix()
 
     def test_microvm_config_validation(self, temp_dir):
         """Test MicroVM config is validated."""
@@ -285,6 +287,10 @@ class TestRootfsOverlay:
 class TestVMTermination:
     """Tests for VM termination."""
 
+    @pytest.mark.skipif(
+        not hasattr(socket, "AF_UNIX"),
+        reason="Firecracker's API socket is a Unix domain socket; Windows has no AF_UNIX",
+    )
     def test_terminate_firecracker_vm(self, sandbox, temp_dir):
         """Test graceful VM termination via API."""
         api_socket = temp_dir / "firecracker.sock"

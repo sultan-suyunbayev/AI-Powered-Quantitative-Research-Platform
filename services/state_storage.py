@@ -435,12 +435,18 @@ class JsonBackend:
                 fh.flush()
                 os.fsync(fh.fileno())
             os.replace(tmp_path, path)
-            with suppress(OSError):
-                dir_fd = os.open(str(path.parent), os.O_DIRECTORY)
-                try:
-                    os.fsync(dir_fd)
-                finally:
-                    os.close(dir_fd)
+            # Fsyncing the directory is a POSIX durability step with no Windows
+            # equivalent: os.O_DIRECTORY does not exist there, and the
+            # AttributeError that raised is not an OSError, so it escaped this
+            # suppression and took the whole save with it.
+            dir_flag = getattr(os, "O_DIRECTORY", None)
+            if dir_flag is not None:
+                with suppress(OSError):
+                    dir_fd = os.open(str(path.parent), dir_flag)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
         except Exception:
             logger.warning("Failed to persist JSON state to %s", path, exc_info=True)
             with suppress(Exception):
@@ -718,12 +724,27 @@ def _file_lock(lock_path: Path | str):
     with path.open("w") as lock_file:
         try:
             import fcntl
+        except ModuleNotFoundError:
+            # No fcntl on Windows. msvcrt.locking on a one-byte range is the
+            # equivalent exclusive lock. The import used to be unguarded, so
+            # save_state() raised ModuleNotFoundError there and no state could
+            # be persisted at all.
+            import msvcrt
 
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                with suppress(Exception):
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            yield
-        finally:
-            with suppress(Exception):
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            try:
+                yield
+            finally:
+                with suppress(Exception):
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _rotate_backups(path: Path, keep: int, *, create_new: bool) -> None:

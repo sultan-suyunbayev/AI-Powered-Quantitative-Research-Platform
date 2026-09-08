@@ -189,9 +189,13 @@ class TestVGSv31Fix:
 
         state = vgs.state_dict()
 
-        assert (
-            state["vgs_version"] == "3.1"
-        ), f"VGS version should be 3.1, got {state['vgs_version']}"
+        # The mean-of-squares fix landed in 3.1; 3.2 added min_scaling_factor and
+        # variance_cap. load_state_dict accepts exactly these two, so keep this
+        # list in step with it.
+        assert state["vgs_version"] in (
+            "3.1",
+            "3.2",
+        ), f"VGS version should be one load_state_dict accepts, got {state['vgs_version']}"
 
         print(f"[OK] STATE_DICT VERSION: {state['vgs_version']}")
 

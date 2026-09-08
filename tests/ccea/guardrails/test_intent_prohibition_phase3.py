@@ -67,6 +67,11 @@ class TestAsciiSafeOutput:
 
         output = captured.getvalue()
 
+        # The report quotes the path it was handed, and that path belongs to the
+        # caller -- on a host whose user name is not ASCII, neither is it. What
+        # has to stay ASCII is everything the guard itself writes.
+        output = output.replace(str(tmp_path), "<tmp>")
+
         # Verify ASCII-safe
         assert output.isascii(), f"Output contains non-ASCII: {output!r}"
         assert "[FAIL]" in output or "FAILED" in output

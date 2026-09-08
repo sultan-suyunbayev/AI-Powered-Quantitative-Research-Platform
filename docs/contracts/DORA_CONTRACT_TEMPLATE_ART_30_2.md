@@ -42,7 +42,7 @@ The Provider SHALL:
 
 The Provider SHALL NOT:
 
-- Execute trades on Client's behalf without explicit authorization
+- Act as broker, dealer or execution venue for Client, or transmit any order to a market on Client's behalf, under any circumstances
 - Access Client's trading accounts except as required for service delivery
 - Make investment decisions for Client
 

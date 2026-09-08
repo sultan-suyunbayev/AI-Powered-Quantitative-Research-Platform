@@ -15,7 +15,7 @@ Coverage target: 100%
 import json
 import pytest
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from services.core.risk_controls.audit_models import (
@@ -422,7 +422,9 @@ class TestAuditRecordBuilder:
         """Test timestamp setting methods."""
         ts_ns = time.time_ns()
         ts_ms = int(time.time() * 1000)
-        dt = datetime.now()
+        # An aware datetime pins the instant regardless of how a naive one would
+        # be read; timestamp_datetime takes naive values as UTC.
+        dt = datetime.now(timezone.utc)
 
         # Test nanoseconds
         record1 = AuditRecordBuilder().firm_lei("5493001KJTIIGC8Y1R12").timestamp(ts_ns).build()

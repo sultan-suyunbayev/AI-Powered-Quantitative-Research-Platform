@@ -615,13 +615,25 @@ class TenantJobIsolation:
                 )
                 return False
 
+            # Compare resolved against resolved. path.resolve() expands 8.3
+            # short names and the drive on Windows, so measuring it against an
+            # unresolved data_path never matched there and a write to the
+            # read-only data path came back allowed.
+            def _resolved(candidate: Path) -> Path:
+                try:
+                    return candidate.resolve()
+                except (OSError, RuntimeError):
+                    return candidate
+
+            data_root = _resolved(context.data_path)
+
             # Check against allowed paths
             for allowed in context.allowed_paths:
                 try:
-                    resolved.relative_to(allowed)
+                    resolved.relative_to(_resolved(allowed))
 
                     # For data_path, only allow read
-                    if write and resolved.is_relative_to(context.data_path):
+                    if write and resolved.is_relative_to(data_root):
                         self._record_violation(
                             IsolationViolationType.PERMISSION_DENIED,
                             context.tenant_id,

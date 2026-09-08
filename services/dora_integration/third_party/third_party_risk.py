@@ -1241,7 +1241,9 @@ class DORAThirdPartyRiskManagement:
         assessments = self.get_assessments_for_provider(provider_id)
         if not assessments:
             return None
-        return max(assessments, key=lambda a: a.assessment_date)
+        # Break date ties by position: max() keeps the first maximal element, and
+        # two assessments recorded in the same clock tick share a date.
+        return max(enumerate(assessments), key=lambda pair: (pair[1].assessment_date, pair[0]))[1]
 
     def get_providers_needing_assessment(self) -> List[ICTProvider]:
         """Get providers that need risk assessment."""

@@ -1393,7 +1393,12 @@ class DORAConcentrationRisk:
         with self._lock:
             if not self._assessments:
                 return None
-            return max(self._assessments.values(), key=lambda a: a.assessment_date)
+            # Break date ties by insertion order -- see get_latest_assessment in
+            # third_party_risk.py.
+            return max(
+                enumerate(self._assessments.values()),
+                key=lambda pair: (pair[1].assessment_date, pair[0]),
+            )[1]
 
     # =========================================================================
     # Dependency Mapping

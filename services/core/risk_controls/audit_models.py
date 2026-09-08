@@ -32,7 +32,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Optional, Dict, Any, List, Union
@@ -592,7 +592,14 @@ class AuditRecordBuilder:
         return self
 
     def timestamp_datetime(self, dt: datetime) -> "AuditRecordBuilder":
-        """Set event timestamp from datetime."""
+        """Set event timestamp from datetime.
+
+        A naive value is taken as UTC, to match ``time.time_ns()`` and the
+        ``datetime.utcnow()`` this module builds its timestamps from.
+        ``datetime.timestamp()`` would otherwise read it as local time.
+        """
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
         self._record.event_timestamp_ns = int(dt.timestamp() * 1e9)
         return self
 

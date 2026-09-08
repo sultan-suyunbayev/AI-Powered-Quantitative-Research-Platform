@@ -17,6 +17,11 @@ on:
       - '**.yaml'
       - '**.yml'
 
+# Superseded runs on the same ref are not worth a runner slot.
+concurrency:
+  group: docs-quality-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   encoding-check:
     name: Check Encoding (UTF-8)

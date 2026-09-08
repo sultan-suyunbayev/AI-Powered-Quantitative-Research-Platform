@@ -74,8 +74,11 @@ def test_categorical_variance_from_old_probs():
     # Old mean value
     old_mean = (old_probs * atoms).sum(dim=1, keepdim=True)
 
-    # CORRECT: Compute old_variance using old probabilities (weighted)
-    old_atoms_centered = atoms - old_mean.squeeze(-1)
+    # CORRECT: Compute old_variance using old probabilities (weighted).
+    # atoms is [n_atoms] and old_mean is [batch, 1], so this broadcasts to
+    # [batch, n_atoms] as it stands; squeezing old_mean first made it [batch]
+    # and the subtraction a shape error.
+    old_atoms_centered = atoms - old_mean
     old_variance_correct = ((old_atoms_centered**2) * old_probs).sum(dim=1, keepdim=True)
 
     # INCORRECT (bug): Assume uniform distribution
@@ -118,12 +121,14 @@ def test_variance_constraint_correctness():
     new_quantiles_centered = new_quantiles - new_mean
     new_variance = (new_quantiles_centered**2).mean(dim=1, keepdim=True)
 
-    # Compute variance ratio and apply constraint
-    variance_ratio = new_variance / (old_variance + 1e-8)
-    variance_ratio_constrained = torch.clamp(variance_ratio, max=variance_clip_factor**2)
-    std_ratio = torch.sqrt(variance_ratio_constrained)
+    # Apply the constraint the way distributional_ppo does: shrink the new
+    # distribution toward its mean until its std is at most k times the old one,
+    # and leave it alone when it already is.
+    #   scale = min(1, max_std / current_std)
+    max_std = torch.sqrt(old_variance + 1e-8) * variance_clip_factor
+    current_std = torch.sqrt(new_variance + 1e-8)
+    std_ratio = torch.clamp(max_std / current_std, max=1.0)
 
-    # Apply scaling
     constrained_quantiles_centered = new_quantiles_centered * std_ratio
     constrained_variance = (constrained_quantiles_centered**2).mean(dim=1, keepdim=True)
 
