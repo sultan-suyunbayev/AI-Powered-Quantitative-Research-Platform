@@ -391,10 +391,7 @@ except Exception:  # pragma: no cover - feature_config is always importable in-t
     _feature_config = None
 
 
-@pytest.fixture(autouse=True)
-def _restore_feature_layout():
-    """Put feature_config's global layout back after each test."""
-    yield
+def _reset_feature_layout() -> None:
     if _feature_config is None:
         return
     if (
@@ -405,3 +402,17 @@ def _restore_feature_layout():
         _feature_config.FEATURES_LAYOUT = [dict(block) for block in _DEFAULT_FEATURES_LAYOUT]
         _feature_config.N_FEATURES = _DEFAULT_N_FEATURES
         _feature_config.EXT_NORM_DIM = _DEFAULT_EXT_NORM_DIM
+
+
+@pytest.fixture(autouse=True)
+def _restore_feature_layout():
+    """Put feature_config's global layout back around every test.
+
+    Before as well as after: a module-level ``make_layout()`` call runs during
+    *collection*, which is over before the first test starts, so restoring only
+    on teardown would leave the whole session working from whatever the last
+    collected module left behind.
+    """
+    _reset_feature_layout()
+    yield
+    _reset_feature_layout()

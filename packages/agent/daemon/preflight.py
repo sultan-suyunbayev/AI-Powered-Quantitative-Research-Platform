@@ -295,7 +295,9 @@ class PreflightChecker:
         """
         import time as time_module
 
-        start_time = time_module.time()
+        # perf_counter, not time(): the wall clock ticks in ~15.6 ms steps
+        # on Windows, so a fast preflight measured as exactly 0.0 ms.
+        start_time = time_module.perf_counter()
 
         result = PreflightResult(run_id=run_id, artifact_digest=artifact_digest)
 
@@ -336,11 +338,11 @@ class PreflightChecker:
         ]
 
         for check_type, check_fn in checks:
-            check_start = time_module.time()
+            check_start = time_module.perf_counter()
             try:
                 check = check_fn()
                 check.check_type = check_type
-                check.duration_ms = (time_module.time() - check_start) * 1000
+                check.duration_ms = (time_module.perf_counter() - check_start) * 1000
                 result.checks.append(check)
 
                 if check.result == PreflightCheckResult.FAILED:
@@ -356,13 +358,13 @@ class PreflightChecker:
                     check_type=check_type,
                     result=PreflightCheckResult.FAILED,
                     message=f"Check failed with exception: {str(e)}",
-                    duration_ms=(time_module.time() - check_start) * 1000,
+                    duration_ms=(time_module.perf_counter() - check_start) * 1000,
                 )
                 result.checks.append(check)
                 result.errors.append(check.message)
 
         # Overall result
-        result.duration_ms = (time_module.time() - start_time) * 1000
+        result.duration_ms = (time_module.perf_counter() - start_time) * 1000
         result.passed = len(result.errors) == 0
 
         with self._lock:

@@ -19,24 +19,13 @@ ActionProto = exec_mod.ActionProto
 ActionType = exec_mod.ActionType
 ExecutionSimulator = exec_mod.ExecutionSimulator
 
-# Load quantizer and constants
-spec_quant = importlib.util.spec_from_file_location("quantizer", base / "quantizer.py")
-quant_mod = importlib.util.module_from_spec(spec_quant)
-sys.modules["quantizer"] = quant_mod
-spec_quant.loader.exec_module(quant_mod)
-Quantizer = quant_mod.Quantizer
-
-spec_impl = importlib.util.spec_from_file_location("impl_quantizer", base / "impl_quantizer.py")
-impl_mod = importlib.util.module_from_spec(spec_impl)
-sys.modules["impl_quantizer"] = impl_mod
-spec_impl.loader.exec_module(impl_mod)
-QuantizerImpl = impl_mod.QuantizerImpl
-
-spec_const = importlib.util.spec_from_file_location("core_constants", base / "core_constants.py")
-const_mod = importlib.util.module_from_spec(spec_const)
-sys.modules["core_constants"] = const_mod
-spec_const.loader.exec_module(const_mod)
-PRICE_SCALE = const_mod.PRICE_SCALE
+# Quantizer and constants by plain name. Loading them from their paths and
+# installing them in sys.modules replaced the copies every other module already
+# held, so a later isinstance(component, QuantizerImpl) compared two different
+# classes and failed.
+from core_constants import PRICE_SCALE
+from impl_quantizer import QuantizerImpl
+from quantizer import Quantizer
 
 from fast_lob import CythonLOB
 

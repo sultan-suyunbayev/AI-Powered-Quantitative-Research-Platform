@@ -1,5 +1,4 @@
 import json
-import importlib.util
 import pathlib
 import sys
 import types
@@ -10,35 +9,17 @@ base = pathlib.Path(__file__).resolve().parents[1]
 if str(base) not in sys.path:
     sys.path.append(str(base))
 
-spec_med = importlib.util.spec_from_file_location("mediator", base / "mediator.py")
-med_mod = importlib.util.module_from_spec(spec_med)
-sys.modules["mediator"] = med_mod
-spec_med.loader.exec_module(med_mod)
-Mediator = med_mod.Mediator
+# Plain imports, not spec_from_file_location. Loading these from their paths and
+# installing them under their own names replaced the copies every other module
+# already held, so a later test comparing an ActionProto against
+# trading_patchnew's ActionProto found two different classes.
+import impl_quantizer as impl_mod
+import quantizer as quant_mod  # noqa: F401  -- imported for its side effects on impl_quantizer
+from action_proto import ActionProto, ActionType
+from core_constants import PRICE_SCALE
+from mediator import Mediator
 
-spec_ap = importlib.util.spec_from_file_location("action_proto", base / "action_proto.py")
-ap_mod = importlib.util.module_from_spec(spec_ap)
-sys.modules["action_proto"] = ap_mod
-spec_ap.loader.exec_module(ap_mod)
-ActionProto = ap_mod.ActionProto
-ActionType = ap_mod.ActionType
-
-spec_quant = importlib.util.spec_from_file_location("quantizer", base / "quantizer.py")
-quant_mod = importlib.util.module_from_spec(spec_quant)
-sys.modules["quantizer"] = quant_mod
-spec_quant.loader.exec_module(quant_mod)
-
-spec_impl = importlib.util.spec_from_file_location("impl_quantizer", base / "impl_quantizer.py")
-impl_mod = importlib.util.module_from_spec(spec_impl)
-sys.modules["impl_quantizer"] = impl_mod
-spec_impl.loader.exec_module(impl_mod)
 QuantizerImpl = impl_mod.QuantizerImpl
-
-spec_const = importlib.util.spec_from_file_location("core_constants", base / "core_constants.py")
-const_mod = importlib.util.module_from_spec(spec_const)
-sys.modules["core_constants"] = const_mod
-spec_const.loader.exec_module(const_mod)
-PRICE_SCALE = const_mod.PRICE_SCALE
 
 
 class DummyLOB:
