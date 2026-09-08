@@ -19,17 +19,23 @@ class _Guards:
 def _make_stub_module() -> None:
     mod = types.ModuleType("stub_comp")
 
-    class MarketData:  # noqa: D401 - simple stub
+    # di_registry injects whatever the container can supply, so the stubs have
+    # to accept arguments; a bare class inherits object.__init__, which does not.
+    class _Stub:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class MarketData(_Stub):  # noqa: D401 - simple stub
         pass
 
-    class FeaturePipe:
+    class FeaturePipe(_Stub):
         def warmup(self):
             pass
 
-    class Policy:  # noqa: D401 - simple stub
+    class Policy(_Stub):  # noqa: D401 - simple stub
         pass
 
-    class Executor:  # noqa: D401 - simple stub
+    class Executor(_Stub):  # noqa: D401 - simple stub
         pass
 
     mod.MarketData = MarketData
