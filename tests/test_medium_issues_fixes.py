@@ -195,7 +195,10 @@ class TestMedium3_OutlierDetection:
                 "timestamp": range(100),
                 "symbol": ["BTC"] * 100,
                 "close": [100.0] * 100,
-                "volume": [1.0] * 99 + [1000.0],  # One extreme outlier in volume
+                # The outlier sits mid-series: FeaturePipeline shifts each
+                # symbol's series by one bar to avoid look-ahead, so an outlier
+                # on the last bar never reaches the statistics at all.
+                "volume": [1.0] * 50 + [1000.0] + [1.0] * 49,
             }
         )
 

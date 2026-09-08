@@ -110,9 +110,11 @@ class TestMathematicalFoundation(unittest.TestCase):
         print("ДОКАЗАТЕЛЬСТВО: Оценка математического ожидания")
         print("=" * 70)
 
-        # Создаем данные с известными свойствами
+        # Создаем данные с известными свойствами.
+        # calculate_parkinson_volatility требует минимум 80% заполненности окна
+        # (min_required = max(2, int(0.8 * n))), иначе возвращает None.
         n_window = 10
-        n_valid = 7
+        n_valid = 8
         ohlc_bars = [{"high": 105.0, "low": 100.0} for _ in range(n_valid)]
         ohlc_bars += [{"high": 0.0, "low": 0.0} for _ in range(n_window - n_valid)]
 

@@ -176,7 +176,9 @@ def test_lite_ui_audit_handlers_are_unique_and_truthful():
     assert "function jobSucceeded(status)" in html
     assert "status.state === 'succeeded'" in html
     assert "window.location.protocol" in html
-    assert "WalletConnect SDK не установлен" in html
+    # The wallet panel must still say plainly that mobile WalletConnect is not
+    # available offline, rather than implying a connection it cannot make.
+    assert "WalletConnect-relay требует онлайн-SDK" in html
     assert "SpeechRecognition || window.webkitSpeechRecognition" in html
     assert "document.createElement('input')" in html
     assert "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb" not in html

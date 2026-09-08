@@ -178,7 +178,8 @@ class TestPPOTargetFixCodeReview:
         """
         Verify that expected_group_len uses unclipped target for consistency.
         """
-        pattern = r"expected_group_len\s*=.*target_returns_norm_raw_selected"
+        # \s crosses the line break black put inside the int(...) call; `.` does not.
+        pattern = r"expected_group_len\s*=\s*(?:int\(\s*)?target_returns_norm_raw_selected"
         matches = re.findall(pattern, ppo_code)
         assert len(matches) >= 1, (
             "expected_group_len should use target_returns_norm_raw_selected " "for consistency"

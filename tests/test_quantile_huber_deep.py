@@ -360,15 +360,15 @@ def test_quantile_huber_loss_gradient_flow_linear_region() -> None:
     assert predicted.grad is not None
     assert torch.isfinite(predicted.grad).all()
 
-    # In linear region: ∂L/∂predicted = |τ - I| * kappa * sign(delta)
-    # All deltas are positive (predicted > target)
-    # Gradients should all be positive
+    # In the linear region: ∂L/∂predicted = |τ - I| * kappa * sign(-u)
+    # u = target - predicted is negative here (predicted > target), so raising
+    # the prediction further raises the loss: every gradient is positive.
     assert (predicted.grad > 0).all(), "All gradients should be positive"
 
-    # Gradient magnitude should be proportional to |tau - I|
+    # Gradient magnitude is proportional to |tau - I|
     tau = torch.tensor([0.1, 0.5, 0.9])
-    # delta > 0, so I = 0
-    expected_weights = tau  # |tau - 0|
+    # u < 0, so I = 1
+    expected_weights = 1.0 - tau  # |tau - 1|
 
     # Gradients should be proportional to these weights
     grad_ratios = predicted.grad[0] / expected_weights
@@ -624,34 +624,34 @@ def test_quantile_huber_loss_indicator_correctness() -> None:
 
     algo.policy = PolicyStub()
 
-    # Test case 1: delta > 0 (predicted > target)
-    # indicator should be 0
+    # Case 1: the critic overestimates (predicted > target), so u < 0
+    # and the indicator is 1.
     predicted_over = torch.tensor([[1.0]], dtype=torch.float32)
     targets_over = torch.tensor([[0.0]], dtype=torch.float32)
     loss_over = DistributionalPPO._quantile_huber_loss(algo, predicted_over, targets_over)
 
-    # delta = 1.0 - 0.0 = 1.0 > 0, so indicator = 0
-    # |tau - indicator| = |0.01 - 0| = 0.01
-    # huber (linear): 1.0 * (1.0 - 0.5) = 0.5
-    # loss = 0.01 * 0.5 = 0.005
-    expected_over = 0.01 * 1.0 * (1.0 - 0.5 * 1.0)
+    # u = 0.0 - 1.0 = -1.0 < 0, so indicator = 1
+    # |tau - indicator| = |0.01 - 1| = 0.99
+    # huber at |u| = kappa: 1.0 * (1.0 - 0.5) = 0.5
+    # loss = 0.99 * 0.5 = 0.495 -- the 0.01-quantile is punished hard for
+    # sitting above the target, which is the whole point of the asymmetry.
+    expected_over = 0.99 * 1.0 * (1.0 - 0.5 * 1.0)
     assert math.isclose(loss_over.item(), expected_over, rel_tol=1e-5)
 
-    # Test case 2: delta < 0 (predicted < target)
-    # indicator should be 1
+    # Case 2: the critic underestimates (predicted < target), so u > 0
+    # and the indicator is 0.
     predicted_under = torch.tensor([[0.0]], dtype=torch.float32)
     targets_under = torch.tensor([[1.0]], dtype=torch.float32)
     loss_under = DistributionalPPO._quantile_huber_loss(algo, predicted_under, targets_under)
 
-    # delta = 0.0 - 1.0 = -1.0 < 0, so indicator = 1
-    # |tau - indicator| = |0.01 - 1| = 0.99
-    # huber (linear): 1.0 * (1.0 - 0.5) = 0.5
-    # loss = 0.99 * 0.5 = 0.495
-    expected_under = 0.99 * 1.0 * (1.0 - 0.5 * 1.0)
+    # u = 1.0 - 0.0 = 1.0 > 0, so indicator = 0
+    # |tau - indicator| = |0.01 - 0| = 0.01
+    # loss = 0.01 * 0.5 = 0.005
+    expected_under = 0.01 * 1.0 * (1.0 - 0.5 * 1.0)
     assert math.isclose(loss_under.item(), expected_under, rel_tol=1e-5)
 
-    # Ratio should be 0.99 / 0.01 = 99
-    ratio = loss_under.item() / loss_over.item()
+    # An equal-magnitude overestimate costs 99x what an underestimate does.
+    ratio = loss_over.item() / loss_under.item()
     assert math.isclose(ratio, 99.0, rel_tol=0.01)
 
 
@@ -744,26 +744,26 @@ def test_quantile_huber_loss_manual_calculation_verification() -> None:
     predicted = torch.tensor([[0.0, 1.0, 2.0]], dtype=torch.float32)
     targets = torch.tensor([[1.5]], dtype=torch.float32)
 
-    # Manual calculation:
+    # Manual calculation, on the loss's own convention u = target - predicted:
     # tau = [0.25, 0.5, 0.75]
-    # delta = predicted - target = [-1.5, -0.5, 0.5]
-    # indicator = I{delta < 0} = [1, 1, 0]
-    # |tau - indicator| = [|0.25-1|, |0.5-1|, |0.75-0|] = [0.75, 0.5, 0.75]
+    # u = target - predicted = [1.5, 0.5, -0.5]
+    # indicator = I{u < 0} = [0, 0, 1]
+    # |tau - indicator| = [|0.25-0|, |0.5-0|, |0.75-1|] = [0.25, 0.5, 0.25]
 
-    # For delta = -1.5: |delta| = 1.5 > kappa, linear region
-    #   huber = kappa * (|delta| - 0.5*kappa) = 1.0 * (1.5 - 0.5) = 1.0
-    #   loss_component = 0.75 * 1.0 = 0.75
+    # For u = 1.5: |u| = 1.5 > kappa, linear region
+    #   huber = kappa * (|u| - 0.5*kappa) = 1.0 * (1.5 - 0.5) = 1.0
+    #   loss_component = 0.25 * 1.0 = 0.25
 
-    # For delta = -0.5: |delta| = 0.5 <= kappa, quadratic region
-    #   huber = 0.5 * delta² = 0.5 * 0.25 = 0.125
+    # For u = 0.5: |u| = 0.5 <= kappa, quadratic region
+    #   huber = 0.5 * u² = 0.5 * 0.25 = 0.125
     #   loss_component = 0.5 * 0.125 = 0.0625
 
-    # For delta = 0.5: |delta| = 0.5 <= kappa, quadratic region
-    #   huber = 0.5 * delta² = 0.5 * 0.25 = 0.125
-    #   loss_component = 0.75 * 0.125 = 0.09375
+    # For u = -0.5: |u| = 0.5 <= kappa, quadratic region
+    #   huber = 0.5 * u² = 0.5 * 0.25 = 0.125
+    #   loss_component = 0.25 * 0.125 = 0.03125
 
-    # Total loss = mean([0.75, 0.0625, 0.09375]) = 0.90625 / 3 = 0.302083...
-    expected_loss = (0.75 + 0.0625 + 0.09375) / 3.0
+    # Total loss = mean([0.25, 0.0625, 0.03125]) = 0.34375 / 3 = 0.114583...
+    expected_loss = (0.25 + 0.0625 + 0.03125) / 3.0
 
     loss = DistributionalPPO._quantile_huber_loss(algo, predicted, targets)
 

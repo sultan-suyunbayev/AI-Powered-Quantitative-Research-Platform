@@ -102,9 +102,15 @@ class TestPBTAdversarialIntegration:
 
                 # Check if should exploit
                 if scheduler.should_exploit_and_explore(member):
-                    new_state, new_hyperparams = scheduler.exploit_and_explore(member)
-                    # new_state could be None or a state dict
+                    (
+                        new_state,
+                        new_hyperparams,
+                        checkpoint_format,
+                    ) = scheduler.exploit_and_explore(member)
+                    # new_state could be None or a set of model parameters
                     assert new_hyperparams is not None
+                    if new_state is not None:
+                        assert checkpoint_format is not None
 
         # All members should have history
         assert all(len(m.history) > 0 for m in population)

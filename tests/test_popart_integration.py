@@ -507,8 +507,12 @@ def test_popart_save_load_retains_disabled_state(
             custom_objects=custom_objects,
             print_system_info=print_system_info,
         )
+        # sb3 builds the policy from the saved class; DistributionalPPO's
+        # lightweight env=None path assigns whatever it is given straight to
+        # self.policy, so hand it an instance and keep the methods bound.
+        policy_cls = data.get("policy_class")
         model = cls(
-            policy=data.get("policy_class"),
+            policy=policy_cls() if isinstance(policy_cls, type) else policy_cls,
             env=env,
             device=device,
             _init_setup_model=False,
@@ -560,9 +564,14 @@ def test_popart_save_load_retains_disabled_state(
     loaded = DistributionalPPO.load(save_path, value_scale_max_rel_step=0.5)
 
     assert isinstance(loaded, DistributionalPPO)
-    loaded_logger = getattr(loaded, "logger", None)
-    # Check duck typing - logger should have records dict (may be _CaptureLogger or stub equivalent)
-    assert loaded_logger is not None, "Loaded model should have a logger"
-    assert hasattr(loaded_logger, "records"), "Logger should have records dict"
-    assert loaded_logger.records.get("config/popart/enabled") == pytest.approx(0.0)
-    assert loaded_logger.records.get("config/popart/requested_enabled") == pytest.approx(0.0)
+    # The reload initialises PopArt while the model is being constructed, before
+    # any logger is attached, so the values it would have recorded are held in
+    # _popart_config_logs and replayed once a logger arrives. What this pins down
+    # is that the disabled state survived the round trip and the requested
+    # configuration did not come back with it.
+    loaded_logs = getattr(loaded, "_popart_config_logs", None)
+    assert loaded_logs is not None, "Loaded model should carry its PopArt config logs"
+    assert loaded_logs.get("config/popart/enabled") == pytest.approx(0.0)
+    assert loaded_logs.get("config/popart/requested_enabled") == pytest.approx(0.0)
+    assert loaded._popart_controller is None
+    assert getattr(loaded, "_popart_cfg_serialized", None) is None

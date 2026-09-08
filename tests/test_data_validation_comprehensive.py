@@ -121,11 +121,17 @@ class TestDataValidatorPositiveValues:
         with pytest.raises(ValueError, match="нулевые или отрицательные"):
             validator._check_values_are_positive(valid_df)
 
-    def test_zero_volume(self, validator, valid_df):
-        """Test detection of zero volume."""
-        valid_df.loc[0, "quote_asset_volume"] = 0.0
+    def test_zero_volume_allowed_negative_rejected(self, validator, valid_df):
+        """A bar with no trades is legitimate; a negative volume is not.
 
-        with pytest.raises(ValueError, match="нулевые или отрицательные"):
+        The check requires prices > 0 but volumes >= 0, which is what its
+        docstring says and what a quiet bar needs.
+        """
+        valid_df.loc[0, "quote_asset_volume"] = 0.0
+        validator._check_values_are_positive(valid_df)
+
+        valid_df.loc[0, "quote_asset_volume"] = -1.0
+        with pytest.raises(ValueError, match="отрицательные объемы"):
             validator._check_values_are_positive(valid_df)
 
 

@@ -229,7 +229,9 @@ def test_panic_halt_review_fixes_in_source():
     """Review fixes for the real-broker halt path stay in place."""
     # core_models.Order has quantity/ts, not qty — the broken kwargs are gone.
     assert "qty=abs(qty), order_type=" not in APP_SRC
-    assert "create_futures_order_execution_adapter(ExchangeVendor.BINANCE_FUTURES" in APP_SRC
+    assert re.search(
+        r"create_futures_order_execution_adapter\(\s*ExchangeVendor\.BINANCE_FUTURES", APP_SRC
+    )
     # P0-C closed: Binance spot now HAS an order-execution adapter, so the halt
     # path flattens crypto-spot for real instead of staying fail-closed. The old
     # "no adapter" fail-closed string must be gone, and the spot flatten wired in.
