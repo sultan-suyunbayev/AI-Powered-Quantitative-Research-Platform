@@ -337,14 +337,24 @@ class TestCategoricalCriticNumericalStability:
         probs_safe = torch.clamp(probs, min=epsilon, max=1.0)
         log_probs_new = torch.log(probs_safe)
 
-        # For normal probabilities (> epsilon), results should be nearly identical
+        # log(p + eps) - log(p) = log(1 + eps/p) <= eps/p, so the two agree to
+        # within eps divided by the SMALLEST probability in the batch -- not to a
+        # fixed tolerance. (This used to pass only because the module replaced
+        # torch.rand with a version shifted into [0.5, 1.0], which kept every
+        # normalised probability comfortably large.)
+        bound = float((epsilon / probs).max()) * 1.01
         torch.testing.assert_close(
             log_probs_new,
             log_probs_old,
-            rtol=1e-6,
-            atol=1e-9,
-            msg="torch.clamp and addition approaches differ for normal probabilities",
+            rtol=0.0,
+            atol=max(bound, 1e-9),
+            msg="torch.clamp and addition approaches differ by more than eps/p",
         )
+
+        # And for probabilities well clear of epsilon they are identical to
+        # single-precision resolution.
+        large = probs > 1e-3
+        torch.testing.assert_close(log_probs_new[large], log_probs_old[large], rtol=1e-6, atol=1e-9)
 
     def test_torch_clamp_handles_edge_cases_better(self):
         """Test that torch.clamp handles edge cases better than addition."""
