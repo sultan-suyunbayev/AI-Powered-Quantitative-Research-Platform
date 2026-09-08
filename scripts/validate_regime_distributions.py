@@ -1,11 +1,20 @@
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Dict, Tuple
 
 import numpy as np
 from gymnasium import spaces
+
+# Run directly (`python scripts/validate_regime_distributions.py`) the repository
+# root is not on sys.path, so the flat-root packages do not import. Same guard
+# the sibling scripts use.
+if __package__ in {None, ""}:
+    _repo_root = Path(__file__).resolve().parents[1]
+    if str(_repo_root) not in sys.path:
+        sys.path.insert(0, str(_repo_root))
 
 from wrappers.action_space import ScoreActionWrapper
 

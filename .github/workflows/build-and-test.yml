@@ -20,6 +20,10 @@ jobs:
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PYTHONDONTWRITEBYTECODE: "1"
+      # Job-wide, not per step: the tree carries Russian comments and box-drawing
+      # characters, and the Windows runner's default encoding cannot read or
+      # print them. Several steps already set this individually.
+      PYTHONUTF8: "1"
     defaults:
       run:
         # several steps use bash heredocs; on windows-latest the default shell is
