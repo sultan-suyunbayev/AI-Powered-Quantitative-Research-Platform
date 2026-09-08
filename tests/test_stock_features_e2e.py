@@ -18,6 +18,13 @@ import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock
 
+import feature_config as _fc
+
+# Widths come from the layout, not from a pinned number: the external block has
+# grown twice (21 -> 28 -> 35) and obs_builder writes with bounds checking off.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+
 # =============================================================================
 # FIXTURES
 # =============================================================================
@@ -150,10 +157,12 @@ class TestFeatureConfigIntegration:
     """Test feature_config.py has correct dimensions for stock features."""
 
     def test_ext_norm_dim_includes_stock_features(self):
-        """EXT_NORM_DIM should be 28 (21 crypto + 7 stock)."""
+        """EXT_NORM_DIM covers crypto plus the stock and macro blocks."""
         from feature_config import EXT_NORM_DIM
 
-        assert EXT_NORM_DIM == 28, f"Expected 28, got {EXT_NORM_DIM}"
+        # 21 crypto + 7 stock (Phase 5) + 7 macro/corporate (Phase 6)
+        assert EXT_NORM_DIM == _EXT_DIM
+        assert EXT_NORM_DIM >= 28, f"stock features missing: EXT_NORM_DIM={EXT_NORM_DIM}"
 
     def test_n_features_with_external(self):
         """N_FEATURES should include external features and validity flags."""
@@ -167,7 +176,9 @@ class TestFeatureConfigIntegration:
 
         external_blocks = [b for b in FEATURES_LAYOUT if b["name"] == "external"]
         assert len(external_blocks) == 1
-        assert external_blocks[0]["size"] == 28
+        from feature_config import EXT_NORM_DIM
+
+        assert external_blocks[0]["size"] == EXT_NORM_DIM
 
 
 # =============================================================================
@@ -253,19 +264,27 @@ class TestMediatorStockFeaturesExtraction:
 class TestObsBuilderStockFeatures:
     """Test obs_builder.pyx correctly processes stock features."""
 
-    def test_obs_builder_processes_28_external_features(self):
-        """obs_builder should handle 28 external features (21 crypto + 7 stock)."""
+    def test_obs_builder_handles_a_narrower_external_block(self):
+        """compute_n_features tracks the external width it is given.
+
+        The layout is process-global, so this rebuilds it, measures, and lets
+        conftest's autouse fixture put the default back -- a layout left
+        narrower than the mediator's output overflows the observation buffer.
+        """
         try:
-            from obs_builder import build_observation_vector, compute_n_features
+            from obs_builder import compute_n_features
         except ImportError:
             pytest.skip("obs_builder not compiled")
 
-        # Check compute_n_features works with 28 external features
-        from feature_config import FEATURES_LAYOUT, make_layout
+        import feature_config
 
-        make_layout({"ext_norm_dim": 28})
-        n_features = compute_n_features(FEATURES_LAYOUT)
-        assert n_features == 99, f"Expected 99 features, got {n_features}"
+        default_total = compute_n_features(feature_config.FEATURES_LAYOUT)
+
+        narrow = feature_config.make_layout({"ext_norm_dim": 28})
+        narrow_total = compute_n_features(narrow)
+
+        # One value column plus one validity flag per external feature.
+        assert default_total - narrow_total == 2 * (_EXT_DIM - 28)
 
     def test_observation_vector_shape_with_stock_features(self, sample_stock_df):
         """Full observation vector should include stock features."""
@@ -280,8 +299,8 @@ class TestObsBuilderStockFeatures:
         out_features = np.zeros(N_FEATURES, dtype=np.float32)
 
         # Prepare inputs
-        norm_cols_values = np.zeros(28, dtype=np.float32)
-        norm_cols_validity = np.zeros(28, dtype=np.uint8)
+        norm_cols_values = np.zeros(_EXT_DIM, dtype=np.float32)
+        norm_cols_validity = np.zeros(_EXT_DIM, dtype=np.uint8)
 
         # Set stock features
         norm_cols_values[21] = 0.3  # vix_normalized
