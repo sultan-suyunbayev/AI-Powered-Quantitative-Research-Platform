@@ -14,35 +14,47 @@ ActionType = exec_mod.ActionType
 ExecutionSimulator = exec_mod.ExecutionSimulator
 
 
-def test_limit_order_ttl_expires():
+def _resting_limit_sim():
+    """A simulator in which a BUY LIMIT at 100 rests instead of crossing.
+
+    With no market snapshot the simulator synthesises the best quote from the
+    order's own price, so `price >= best_ask` and the order fills immediately;
+    these tests are about TTL, so give them a market the order does not cross.
+    """
     sim = ExecutionSimulator()
+    sim.set_market_snapshot(bid=99.0, ask=101.0, liquidity=5.0)
+    return sim
+
+
+def test_limit_order_ttl_expires():
+    sim = _resting_limit_sim()
     proto = ActionProto(action_type=ActionType.LIMIT, volume_frac=1.0, abs_price=100.0, ttl_steps=1)
     oid = sim.submit(proto)
-    report1 = sim.pop_ready(ref_price=100.0)
+    report1 = sim.pop_ready(ref_price=101.0)
     assert report1.new_order_ids == [oid]
-    report2 = sim.pop_ready(ref_price=100.0)
+    report2 = sim.pop_ready(ref_price=101.0)
     assert report2.cancelled_ids == [oid]
     assert report2.cancelled_reasons == {oid: "TTL"}
     assert report2.trades == []
 
 
 def test_limit_order_ttl_survives():
-    sim = ExecutionSimulator()
+    sim = _resting_limit_sim()
     proto = ActionProto(action_type=ActionType.LIMIT, volume_frac=1.0, abs_price=100.0, ttl_steps=3)
     oid = sim.submit(proto)
-    report1 = sim.pop_ready(ref_price=100.0)
+    report1 = sim.pop_ready(ref_price=101.0)
     assert report1.new_order_ids == [oid]
-    report2 = sim.pop_ready(ref_price=100.0)
+    report2 = sim.pop_ready(ref_price=101.0)
     assert report2.cancelled_ids == []
-    report3 = sim.pop_ready(ref_price=100.0)
+    report3 = sim.pop_ready(ref_price=101.0)
     assert report3.cancelled_ids == []
-    report4 = sim.pop_ready(ref_price=100.0)
+    report4 = sim.pop_ready(ref_price=101.0)
     assert report4.cancelled_ids == [oid]
     assert report4.cancelled_reasons == {oid: "TTL"}
 
 
 def test_limit_order_ttl_ms_rounds_up():
-    sim = ExecutionSimulator()
+    sim = _resting_limit_sim()
     sim.step_ms = 200
     proto = SimpleNamespace(
         action_type=ActionType.LIMIT,
@@ -51,11 +63,11 @@ def test_limit_order_ttl_ms_rounds_up():
         ttl_ms=350,
     )
     oid = sim.submit(proto)
-    report1 = sim.pop_ready(ref_price=100.0)
+    report1 = sim.pop_ready(ref_price=101.0)
     assert report1.new_order_ids == [oid]
-    report2 = sim.pop_ready(ref_price=100.0)
+    report2 = sim.pop_ready(ref_price=101.0)
     assert report2.cancelled_ids == []
-    report3 = sim.pop_ready(ref_price=100.0)
+    report3 = sim.pop_ready(ref_price=101.0)
     assert report3.cancelled_ids == [oid]
     assert report3.cancelled_reasons == {oid: "TTL"}
 
