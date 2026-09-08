@@ -8,11 +8,40 @@ IMPORTANT: These tests work WITHOUT external dependencies (arch module).
 """
 
 import math
+import pathlib
+import re
+
 import numpy as np
 import pandas as pd
 import pytest
 import sys
 import os
+
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def _squash(text: str) -> str:
+    """Drop whitespace entirely so a match survives any line wrapping."""
+    return re.sub(r"\s+", "", text)
+
+
+class _Source(str):
+    """Module source whose ``in`` test ignores how the code is wrapped.
+
+    These assertions pin the shape of a formula, not its formatting; black
+    reflowed several of the statements they look for, which silently turned the
+    checks into failures.
+    """
+
+    def __contains__(self, needle: object) -> bool:  # type: ignore[override]
+        return _squash(str(needle)) in _squash(str(self))
+
+
+def _read_source(name: str) -> _Source:
+    """Read a module from the repository root, in UTF-8, whatever the cwd."""
+    return _Source((_REPO_ROOT / name).read_text(encoding="utf-8"))
+
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -44,8 +73,7 @@ class TestCodeInspection:
         - Yang, D. & Zhang, Q. (2000) "Drift-Independent Volatility Estimation"
         - Rogers, L.C.G. & Satchell, S.E. (1991) "Estimating Variance from HLOC"
         """
-        with open("transformers.py", "r", encoding="utf-8") as f:
-            source = f.read()
+        source = _read_source("transformers.py")
 
         # Should have the fix comment (2025-11-26 version)
         assert "FIX (2025-11-26)" in source, "Missing FIX (2025-11-26) comment"
@@ -73,8 +101,7 @@ class TestCodeInspection:
 
         Should use median initialization, not first return squared.
         """
-        with open("transformers.py", "r", encoding="utf-8") as f:
-            source = f.read()
+        source = _read_source("transformers.py")
 
         # Should have the fix comment
         assert "CRITICAL FIX #4" in source, "Missing CRITICAL FIX #4 comment"
@@ -96,8 +123,7 @@ class TestCodeInspection:
 
         Should use np.log() instead of linear returns.
         """
-        with open("feature_pipe.py", "r", encoding="utf-8") as f:
-            source = f.read()
+        source = _read_source("feature_pipe.py")
 
         # Should have the fix comment
         assert "CRITICAL FIX #3" in source, "Missing CRITICAL FIX #3 comment"
@@ -269,8 +295,7 @@ class TestYangZhangIntegration:
         - Yang, D. & Zhang, Q. (2000) "Drift-Independent Volatility Estimation"
         - Rogers, L.C.G. & Satchell, S.E. (1991) "Estimating Variance from HLOC"
         """
-        with open("transformers.py", "r", encoding="utf-8") as f:
-            lines = f.readlines()
+        lines = _read_source("transformers.py").splitlines(keepends=True)
 
         # Find _try_calculate_yang_zhang function (where the fix is)
         yang_zhang_start = None
@@ -283,7 +308,7 @@ class TestYangZhangIntegration:
 
         # Extract function (next ~100 lines)
         function_lines = lines[yang_zhang_start : yang_zhang_start + 100]
-        function_text = "".join(function_lines)
+        function_text = _Source("".join(function_lines))
 
         # Check all three components with CORRECT denominators
         # 1. Overnight: should use (len - 1) - this IS a centered estimator
@@ -315,8 +340,7 @@ class TestEWMAIntegration:
         """
         Verify EWMA function has robust initialization in source.
         """
-        with open("transformers.py", "r", encoding="utf-8") as f:
-            lines = f.readlines()
+        lines = _read_source("transformers.py").splitlines(keepends=True)
 
         # Find EWMA function
         ewma_start = None
@@ -329,7 +353,7 @@ class TestEWMAIntegration:
 
         # Extract function
         function_lines = lines[ewma_start : ewma_start + 80]
-        function_text = "".join(function_lines)
+        function_text = _Source("".join(function_lines))
 
         # Check for median initialization
         assert (

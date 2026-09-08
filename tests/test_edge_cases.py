@@ -33,7 +33,10 @@ def test_edge_case_single_atom():
     assert torch.allclose(projected, probs), "Single atom should be identity"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * atoms).sum()
     loss.backward()
     assert probs.grad is not None, "Gradient should exist"
 
@@ -66,7 +69,10 @@ def test_edge_case_all_same_bounds():
     assert torch.allclose(projected, probs, atol=1e-4), "Identity projection should preserve probs"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist"
     assert not torch.allclose(
@@ -109,7 +115,10 @@ def test_edge_case_no_same_bounds():
     assert torch.all(projected >= 0), "Projected probs should be non-negative"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * target_atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist"
     assert not torch.allclose(
@@ -151,7 +160,10 @@ def test_edge_case_mixed_same_bounds():
     assert torch.all(projected >= 0), "All projected probs should be non-negative"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * target_atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist"
 
@@ -204,7 +216,10 @@ def test_edge_case_extreme_shift():
     ), "Most mass should be in upper half for large positive shift"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * target_atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist even with extreme shift"
 
@@ -238,7 +253,10 @@ def test_edge_case_batch_size_one():
     assert torch.allclose(projected.sum(), torch.tensor(1.0), atol=1e-5), "Probs should sum to 1"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * target_atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist"
 
@@ -278,7 +296,10 @@ def test_edge_case_large_batch():
     assert torch.all(projected >= 0), "All probabilities should be non-negative"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * target_atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist"
 

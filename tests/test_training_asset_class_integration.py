@@ -204,39 +204,33 @@ class TestLoadAllDataRouting:
         assert "symbol" in df.columns
         assert "timestamp" in df.columns
 
-    def test_equity_calls_equity_path(self, stock_parquet_file: Path):
-        """asset_class='equity' should use equity loading path."""
-        from fetch_all_data_patch import load_all_data
+    def test_equity_adds_stock_features(self, stock_parquet_file: Path):
+        """asset_class='equity' routes through the stock-feature path."""
+        import data_loader_multi_asset as loader
 
-        # Mock _load_equity_data to verify it's called
-        with patch("fetch_all_data_patch._load_equity_data") as mock_load:
-            mock_load.return_value = ({"AAPL": pd.DataFrame()}, {})
-
-            load_all_data(
+        with patch.object(loader, "_add_stock_features", side_effect=lambda df, *a, **k: df) as add:
+            loader.load_multi_asset_data(
                 [str(stock_parquet_file)],
-                synthetic_fraction=0,
-                seed=42,
-                asset_class="equity",
+                asset_class=loader.AssetClass.EQUITY,
+                merge_fear_greed=False,
+                add_stock_features=True,
+                adjust_corporate_actions=False,
             )
 
-            # Verify equity loader was called
-            mock_load.assert_called_once()
-            call_args = mock_load.call_args
-            assert call_args[1].get("add_stock_features", False) == True
+        assert add.called, "equity data must go through _add_stock_features"
 
-    def test_crypto_does_not_call_equity_path(self, crypto_feather_file: Path):
-        """Crypto should NOT trigger equity loading path."""
-        from fetch_all_data_patch import load_all_data
+    def test_crypto_does_not_add_stock_features(self, crypto_feather_file: Path):
+        """Crypto must not trigger the equity-only feature path."""
+        import data_loader_multi_asset as loader
 
-        with patch("fetch_all_data_patch._read_fng", return_value=pd.DataFrame()):
-            with patch("fetch_all_data_patch._load_equity_data") as mock_equity:
-                load_all_data(
-                    [str(crypto_feather_file)],
-                    asset_class="crypto",
-                )
+        with patch.object(loader, "_add_stock_features") as add:
+            loader.load_multi_asset_data(
+                [str(crypto_feather_file)],
+                asset_class=loader.AssetClass.CRYPTO,
+                merge_fear_greed=False,
+            )
 
-                # Equity loader should NOT be called
-                mock_equity.assert_not_called()
+        add.assert_not_called()
 
 
 # =============================================================================
@@ -364,38 +358,34 @@ class TestEquityFeaturesIntegration:
     """Test that equity data gets stock features added."""
 
     def test_equity_triggers_stock_features_loading(self, stock_parquet_file: Path):
-        """Equity asset_class should trigger stock features addition."""
-        from fetch_all_data_patch import load_all_data
+        """add_stock_features=True reaches the equity feature path."""
+        import data_loader_multi_asset as loader
 
-        # Mock the equity loader to verify add_stock_features is True
-        with patch("fetch_all_data_patch._load_equity_data") as mock_load:
-            mock_load.return_value = ({"AAPL": pd.DataFrame()}, {})
-
-            load_all_data(
+        with patch.object(loader, "_add_stock_features", side_effect=lambda df, *a, **k: df) as add:
+            loader.load_multi_asset_data(
                 [str(stock_parquet_file)],
-                asset_class="equity",
+                asset_class=loader.AssetClass.EQUITY,
+                merge_fear_greed=False,
                 add_stock_features=True,
+                adjust_corporate_actions=False,
             )
 
-            # Verify add_stock_features was passed
-            call_kwargs = mock_load.call_args[1]
-            assert call_kwargs.get("add_stock_features") == True
+        assert add.called
 
     def test_equity_can_disable_stock_features(self, stock_parquet_file: Path):
-        """Should be able to disable stock features for equity."""
-        from fetch_all_data_patch import load_all_data
+        """add_stock_features=False skips it, even for equity."""
+        import data_loader_multi_asset as loader
 
-        with patch("fetch_all_data_patch._load_equity_data") as mock_load:
-            mock_load.return_value = ({"AAPL": pd.DataFrame()}, {})
-
-            load_all_data(
+        with patch.object(loader, "_add_stock_features") as add:
+            loader.load_multi_asset_data(
                 [str(stock_parquet_file)],
-                asset_class="equity",
+                asset_class=loader.AssetClass.EQUITY,
+                merge_fear_greed=False,
                 add_stock_features=False,
+                adjust_corporate_actions=False,
             )
 
-            call_kwargs = mock_load.call_args[1]
-            assert call_kwargs.get("add_stock_features") == False
+        add.assert_not_called()
 
 
 # =============================================================================
