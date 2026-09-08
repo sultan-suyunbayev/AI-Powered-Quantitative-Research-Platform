@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from datetime import date, datetime, time as datetime_time, timedelta
+from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
@@ -1916,19 +1916,19 @@ class TestAdditionalEdgeCases:
                 block_new_positions_minutes=15,
             )
         )
-        # Set timestamp ~40 minutes before ES settlement (16:00 ET = 21:00 UTC)
-        # 40 minutes is between critical (30) and warn (60)
-        ts = int(datetime(2025, 1, 15, 20, 20).timestamp() * 1000)  # 20:20 UTC
+        # 40 minutes before ES settlement, which SETTLEMENT_TIMES_ET puts at
+        # 15:30 ET; the guard converts with a fixed UTC-5, so that is 20:30 UTC
+        # and the instant we want is 19:50 UTC. Built as an aware datetime:
+        # datetime(...).timestamp() reads a naive value as *local* time, so this
+        # only pointed where the comment said on a machine running UTC.
+        # 40 minutes is between critical (30) and warn (60).
+        ts = int(datetime(2025, 1, 15, 19, 50, tzinfo=timezone.utc).timestamp() * 1000)
         result = guard.check_settlement_risk(
             symbol="ES",
             timestamp_ms=ts,
         )
-        # Should be in APPROACHING level
-        assert result.risk_level in (
-            SettlementRiskLevel.APPROACHING,
-            SettlementRiskLevel.NORMAL,
-            SettlementRiskLevel.IMMINENT,
-        )
+        assert result.minutes_to_settlement == 40
+        assert result.risk_level is SettlementRiskLevel.APPROACHING
 
     def test_settlement_imminent_level(self) -> None:
         """Test settlement IMMINENT risk level - just verify result structure."""
