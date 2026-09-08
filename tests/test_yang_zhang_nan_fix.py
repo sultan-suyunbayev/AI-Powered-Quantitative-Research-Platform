@@ -78,7 +78,6 @@ def test_transformer_with_ohlc():
         lookbacks_prices=[240],  # 4h для 4h интервала
         rsi_period=14,
         yang_zhang_windows=[2880],  # 48h
-        sma_periods=[],
         garch_windows=[],
         parkinson_windows=[],
         taker_buy_ratio_windows=[],
@@ -129,7 +128,6 @@ def test_transformer_without_ohlc():
         lookbacks_prices=[240],  # 4h
         rsi_period=14,
         yang_zhang_windows=[2880],  # 48h
-        sma_periods=[],
         garch_windows=[],
         parkinson_windows=[],
         taker_buy_ratio_windows=[],
@@ -173,7 +171,6 @@ def test_transformer_mixed_ohlc():
         lookbacks_prices=[240],
         rsi_period=14,
         yang_zhang_windows=[2880],  # 48h = 12 баров
-        sma_periods=[],
         garch_windows=[],
         parkinson_windows=[],
         taker_buy_ratio_windows=[],
@@ -240,7 +237,6 @@ def test_multiple_windows():
         lookbacks_prices=[240],
         rsi_period=14,
         yang_zhang_windows=[2880, 10080, 43200],  # 48h, 7d, 30d
-        sma_periods=[],
         garch_windows=[],
         parkinson_windows=[],
         taker_buy_ratio_windows=[],
