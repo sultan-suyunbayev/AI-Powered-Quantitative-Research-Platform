@@ -428,6 +428,11 @@ jobs:
 
       - name: Ensure worktree is clean after clean
         run: |
+          # `detect-secrets scan --baseline X` updates X in place: it refreshes the
+          # recorded line numbers on every run. That is the tool working as
+          # designed, and it is not a change anyone would commit, so put the file
+          # back before judging the worktree.
+          git checkout -- .secrets.baseline || true
           make check-clean
           python -c "import subprocess, sys; s=subprocess.check_output(['git','status','--porcelain']).decode().strip(); print(s) if s else None; sys.exit(1 if s else 0)"
 
