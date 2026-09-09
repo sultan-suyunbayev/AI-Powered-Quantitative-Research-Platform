@@ -1063,7 +1063,11 @@ class TestMemoryBenchmarks:
     def test_eviction_gc_pressure(self, temp_dir):
         """Test that eviction doesn't cause excessive GC pressure."""
         gc.collect()
-        initial_collections = gc.get_count()
+        # get_stats() counts collections per generation. get_count(), which this
+        # used to read, reports how many objects are *waiting* in each
+        # generation -- it resets on every sweep and climbs with any allocation
+        # in the process, so differencing it measures activity, not pressure.
+        initial_gen2 = gc.get_stats()[2]["collections"]
 
         manager = create_lazy_lob_manager(
             max_active_lobs=10,
@@ -1082,11 +1086,11 @@ class TestMemoryBenchmarks:
             )
 
         gc.collect()
-        final_collections = gc.get_count()
+        final_gen2 = gc.get_stats()[2]["collections"]
 
-        # GC should not be triggered excessively
-        # (This is a heuristic test)
-        assert final_collections[0] - initial_collections[0] < 20
+        # Evicting 90 of 100 LOBs should not drive repeated full collections.
+        # The explicit gc.collect() above accounts for one of them.
+        assert final_gen2 - initial_gen2 <= 2
 
     def test_memory_per_lob_estimate(self, temp_dir):
         """Test memory estimation per LOB."""
