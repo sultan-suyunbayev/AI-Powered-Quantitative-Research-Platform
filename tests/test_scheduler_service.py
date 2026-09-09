@@ -287,8 +287,9 @@ def test_trading_job_scheduled_is_fail_closed(tmp_path, monkeypatch):
     assert st["last_status"] == STATUS_SKIPPED
     assert "RIVEN_ALLOW_SCHEDULED_TRADING" in st["last_detail"]
     assert ran == []  # действие даже не вызывалось
-    # Журнал зафиксировал skip.
-    runs = svc.recent_runs()
+    # Журнал зафиксировал skip. wait_runs, а не recent_runs: статус задачи
+    # живёт в памяти, журнал — на диске, и пишутся они не одновременно.
+    runs = wait_runs(svc, 1)
     assert runs and runs[0]["status"] == STATUS_SKIPPED
     svc.stop()
 
@@ -534,6 +535,9 @@ def test_api_roundtrip_with_injected_scheduler(tmp_path, monkeypatch):
     res = client.post("/api/scheduler/job/safe/run", json={})
     assert res.status_code == 200 and res.json()["queued"] is True
     wait_terminal(svc, "safe")
+    # Дождаться, пока запись появится в журнале: эндпоинт читает файл, а
+    # wait_terminal смотрит на состояние в памяти.
+    wait_runs(svc, 1)
 
     runs = client.get("/api/scheduler/runs?limit=5").json()["runs"]
     assert runs and runs[0]["job"] == "safe"
