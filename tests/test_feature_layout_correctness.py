@@ -241,6 +241,83 @@ def test_all_feature_counts_agree():
     assert values.shape == (EXT_NORM_DIM,)
     assert validity.shape == (EXT_NORM_DIM,)
 
+    # obs_builder computes the same width arithmetically, which is what its
+    # entry point checks the caller's buffer against. If a block is added to
+    # build_observation_vector_c without moving FIXED_PREFIX_FEATURES, this is
+    # what says so -- and it has to, because the check is the only thing
+    # standing between a short buffer and a heap write.
+    from feature_config import MAX_NUM_TOKENS
+
+    assert obs_builder.required_feature_count(EXT_NORM_DIM, MAX_NUM_TOKENS, True) == layout_total
+
+
+def test_short_observation_buffer_is_refused():
+    """A buffer too small to hold the observation raises instead of overflowing.
+
+    obs_builder writes with bounds checking off, so this is the only thing
+    between a mis-sized buffer and a silent heap write -- which is what §10.29
+    turned out to be.
+    """
+    import numpy as np
+
+    obs_builder = pytest.importorskip("obs_builder")
+    from feature_config import EXT_NORM_DIM, MAX_NUM_TOKENS, N_FEATURES
+
+    norm_cols = np.zeros(EXT_NORM_DIM, dtype=np.float32)
+    validity = np.ones(EXT_NORM_DIM, dtype=np.uint8)
+
+    def build(out, flags=validity):
+        obs_builder.build_observation_vector(
+            100.0,
+            100.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            False,
+            False,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0,
+            MAX_NUM_TOKENS,
+            1,
+            norm_cols,
+            flags,
+            True,
+            out,
+        )
+
+    # One slot short is enough to be refused.
+    with pytest.raises(ValueError, match="bounds checking off"):
+        build(np.zeros(N_FEATURES - 1, dtype=np.float32))
+
+    # A short validity array is an out-of-bounds read, and is refused too.
+    with pytest.raises(ValueError, match="past its end"):
+        build(
+            np.zeros(N_FEATURES, dtype=np.float32),
+            np.ones(EXT_NORM_DIM - 1, dtype=np.uint8),
+        )
+
+    # The exact width still works.
+    build(np.zeros(N_FEATURES, dtype=np.float32))
+
 
 def test_feature_config_block_order_documentation():
     """

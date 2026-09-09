@@ -187,6 +187,35 @@ cpdef int compute_n_features(list layout):
     return total
 
 
+# Features written before the external normalised block. Every write in that
+# stretch is unconditional -- the branches there decide *what* goes in a slot,
+# never whether a slot is used -- so the count does not depend on the inputs.
+# tests/test_feature_layout_correctness.py pins it against the runtime probe in
+# lob_state_cython, so a new block cannot be added above without that failing.
+FIXED_PREFIX_FEATURES = 40
+
+
+cpdef Py_ssize_t required_feature_count(
+    Py_ssize_t n_norm_cols,
+    int max_num_tokens,
+    bint enable_validity_flags,
+):
+    """How long ``out_features`` has to be for these arguments.
+
+    The builder writes through typed memoryviews with ``boundscheck=False``, so
+    a buffer one slot short does not raise -- it writes into whatever follows it
+    in memory. The loops stay unchecked, because they are the hot path of every
+    environment step; the contract is checked once instead, before any of them
+    runs, by ``build_observation_vector``.
+    """
+    cdef Py_ssize_t total = <Py_ssize_t>FIXED_PREFIX_FEATURES + n_norm_cols
+    if max_num_tokens > 0:
+        total += 2 + <Py_ssize_t>max_num_tokens
+    if enable_validity_flags:
+        total += n_norm_cols
+    return total
+
+
 cdef void build_observation_vector_c(
     float price,
     float prev_price,
@@ -727,6 +756,28 @@ cpdef void build_observation_vector(
     # These can be 0 or negative (valid states) but not NaN/Inf
     _validate_portfolio_value(cash, "cash")
     _validate_portfolio_value(units, "units")
+
+    # The buffers have to be big enough before a single unchecked write
+    # happens. Everything below this point runs with bounds checking off.
+    cdef Py_ssize_t n_norm_cols = norm_cols_values.shape[0]
+    cdef Py_ssize_t needed = required_feature_count(
+        n_norm_cols, max_num_tokens, enable_validity_flags
+    )
+    if out_features.shape[0] < needed:
+        raise ValueError(
+            f"out_features holds {out_features.shape[0]} slots but this "
+            f"observation needs {needed} ({n_norm_cols} external columns, "
+            f"max_num_tokens={max_num_tokens}, validity flags "
+            f"{'on' if enable_validity_flags else 'off'}). obs_builder writes "
+            "with bounds checking off, so a short buffer would corrupt memory "
+            "instead of raising."
+        )
+    if enable_validity_flags and norm_cols_validity.shape[0] < n_norm_cols:
+        raise ValueError(
+            f"norm_cols_validity holds {norm_cols_validity.shape[0]} flags for "
+            f"{n_norm_cols} external columns; the flags loop reads one per "
+            "value, so a shorter array reads past its end."
+        )
 
     build_observation_vector_c(
         price,
