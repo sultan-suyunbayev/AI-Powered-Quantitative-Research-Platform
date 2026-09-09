@@ -27,13 +27,31 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+# This file is written against an API that does not exist. The wrapper module is
+# built and importable; it exports MarketSimulatorWrapper, not PyMarketSimulator,
+# and its constructor takes (price_arr, open_arr, high_arr, low_arr,
+# volume_usd_arr, seed) rather than the (price, open_arr, high, low, volume_usd,
+# n_steps, seed) used below. The tests then reach for sim.m_close[i] and
+# sim.update_indicators(i), neither of which the wrapper exposes at all -- the
+# whole method here, feeding prices directly and forcing a recompute, has no
+# equivalent in the public surface.
+#
+# So this is not a missing optional dependency, and saying so would be the
+# third module in this suite to skip itself away behind a reason that is not the
+# real one. Rewriting these seven tests against step()-driven prices, or
+# widening the wrapper API to admit them, is a decision rather than a repair.
+# See docs/AUDIT_2026-09.md, "Still open".
 try:
     from marketmarket_simulator_wrapper import PyMarketSimulator
 
     HAVE_SIMULATOR = True
 except ImportError:
     HAVE_SIMULATOR = False
-    pytest.skip("MarketSimulator not available", allow_module_level=True)
+    pytest.skip(
+        "written against PyMarketSimulator, an API the built wrapper does not "
+        "provide -- see the note above, not an absent dependency",
+        allow_module_level=True,
+    )
 
 try:
     from transformers import FeatureSpec, OnlineFeatureTransformer

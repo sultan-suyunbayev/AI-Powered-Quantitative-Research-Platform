@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import platform
 import sys
 import time
 from pathlib import Path
@@ -101,6 +102,39 @@ def test_background_job_persists_real_exit_status(tmp_path, exit_code, expected)
     assert status["exit_code"] == exit_code
     assert status["running"] is False
     assert "worker" in log_file.read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="the reap was in the /proc branch")
+def test_status_polling_does_not_swallow_a_failed_exit_code(tmp_path):
+    """Reading a job's status must not reap it out from under its own watcher.
+
+    background_running used to call os.waitpid() on a child it found in state Z.
+    start_background's watcher thread is in proc.wait() at that moment, which is
+    also a waitpid: one of the two gets the exit status and the other gets
+    ECHILD, and subprocess answers ECHILD by assuming the child succeeded. So a
+    job that exited 7 was recorded as "succeeded" whenever a status poll landed
+    between the child exiting and the watcher reaping it.
+
+    The window is short, so this polls as fast as it can and repeats. With the
+    reap back in place it fails within a couple of rounds.
+    """
+    for attempt in range(12):
+        pid_file = tmp_path / f"race-{attempt}.pid"
+        log_file = tmp_path / f"race-{attempt}.log"
+        start_background(
+            [sys.executable, "-c", "import sys; sys.exit(7)"],
+            pid_file=str(pid_file),
+            log_file=str(log_file),
+        )
+
+        deadline = time.monotonic() + 10.0
+        status = background_status(str(pid_file))
+        while status.get("state") in {"running", "idle"} and time.monotonic() < deadline:
+            # No sleep: the point is to be inside the window as often as possible.
+            status = background_status(str(pid_file))
+
+        assert status["state"] == "failed", f"attempt {attempt}: {status}"
+        assert status["exit_code"] == 7, f"attempt {attempt}: {status}"
 
 
 def test_windows_job_status_keeps_fresh_pid_during_tasklist_startup(monkeypatch, tmp_path):
