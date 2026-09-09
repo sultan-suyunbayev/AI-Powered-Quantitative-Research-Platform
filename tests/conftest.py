@@ -228,6 +228,11 @@ def pytest_configure(config):
         "markers",
         "allow_network: let this test open sockets to the outside world",
     )
+    config.addinivalue_line(
+        "markers",
+        "uses_filters_refresh: this test exercises QuantizerImpl._refresh_filters "
+        "and stubs the subprocess itself",
+    )
 
 
 # =============================================================================
@@ -635,7 +640,7 @@ def _network_is_off(request):
 
 
 @pytest.fixture(autouse=True)
-def _no_binance_filters_refresh(monkeypatch):
+def _no_binance_filters_refresh(request, monkeypatch):
     """Keep the filters refresh from spawning a fetcher and writing to the tree.
 
     ``QuantizerImpl.__init__`` with ``refresh_on_start`` runs
@@ -646,6 +651,12 @@ def _no_binance_filters_refresh(monkeypatch):
     here. Its return shape is (executed, succeeded, returncode, message), and
     "not executed" is a state the caller already handles.
     """
+    if request.node.get_closest_marker("uses_filters_refresh") is not None:
+        # A test that is about the refresh itself. It has to stub subprocess.run
+        # on its own, which the one that does already did.
+        yield
+        return
+
     try:
         from impl_quantizer import QuantizerImpl
     except Exception:  # pragma: no cover - the module has optional dependencies

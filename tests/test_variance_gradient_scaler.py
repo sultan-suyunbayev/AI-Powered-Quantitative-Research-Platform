@@ -387,6 +387,10 @@ class TestVarianceGradientScalerStatePersistence:
             "min_scaling_factor",
             "variance_cap",
             "param_grad_mean_ema",
+            # 4.0 keeps the first moment per element as well as per parameter:
+            # mean_j(v_j) = S - mean_j(m_j**2) needs each element's own mean,
+            # and averaging before squaring leaves the spatial spread in.
+            "param_grad_mean_elem_ema",
             "param_grad_sq_ema",
             "param_numel",
             "grad_mean_ema",
