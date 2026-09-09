@@ -1239,7 +1239,12 @@ cpdef tuple run_full_step_logic_cython(
 # ==============================================================================
 # ====== ВОССТАНОВЛЕННАЯ И ОПТИМИЗИРОВАННАЯ ФУНКЦИЯ ВОЗНАГРАЖДЕНИЯ ===========
 # ==============================================================================
-cdef inline tuple _compute_reward_cython(
+# cpdef, not 'cdef inline': tests/test_reward_risk_penalty_fix.py calls this
+# with exactly this keyword signature, and a cdef function is invisible from
+# Python, so the module caught the ImportError and skipped all eight of its
+# tests -- for a fix it describes as critical. It is called once per step, so
+# the inlining it gives up is worth nothing.
+cpdef tuple _compute_reward_cython(
     float net_worth, float prev_net_worth, float event_reward,
     bint use_legacy_log_reward, bint use_potential_shaping,
     float gamma, float last_potential, float potential_shaping_coef,
@@ -1251,9 +1256,16 @@ cdef inline tuple _compute_reward_cython(
     # FIX: Исправлен двойной учет reward! Было: reward = delta/scale + log(ratio) - удвоение!
     # Теперь корректно: либо log return, либо relative PnL, но не оба одновременно
     cdef double net_worth_delta = net_worth - prev_net_worth
+    # The same edge case the risk penalty below reasons about, and it has to get
+    # the same answer. When the starting capital is zero, dividing a P&L by 1.0
+    # says '5000 units of profit is a return of 5000', and the clip at the end
+    # turns that into exactly +10 -- which reads as a very good step rather than
+    # as a division by the wrong number. A return is measured against capital,
+    # so the fallback is the peak, and 1.0 only when there is no capital to
+    # speak of at all. See the note on baseline_capital below for the sources.
     cdef double reward_scale = fabs(prev_net_worth)
     if reward_scale < 1e-9:
-        reward_scale = 1.0
+        reward_scale = fabs(peak_value) if fabs(peak_value) > 1e-9 else 1.0
     cdef double reward
     cdef double current_potential = 0.0
     cdef double clipped_ratio, risk_penalty, dd_penalty, baseline_capital

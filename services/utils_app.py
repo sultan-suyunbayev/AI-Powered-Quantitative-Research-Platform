@@ -303,17 +303,26 @@ def background_running(pid_file: str) -> bool:
                     pass
                 return False
 
-            # Check if process is zombie on Linux
+            # Check if process is zombie on Linux.
+            #
+            # Deliberately without os.waitpid(): this function is a read, and
+            # reaping here steals the exit status from the watcher thread that
+            # start_background left in proc.wait(). Exactly one of the two gets
+            # the status and the other gets ECHILD -- which subprocess answers
+            # by assuming the child succeeded, so a job that exited non-zero
+            # gets recorded as "succeeded" if a status poll happens to land in
+            # that window. Only the owner of the Popen may wait on it.
+            #
+            # Being a zombie still means the job is over, so the pid file is
+            # cleared and the watcher publishes the real exit code a moment
+            # later. Nothing leaks: a zombie whose parent is gone is reparented
+            # to init and reaped there.
             try:
                 with open(f"/proc/{pid}/status", "r") as f_proc:
                     for line in f_proc:
                         if line.startswith("State:"):
                             state = line.split()[1]
                             if state.upper() in ("Z", "ZOMBIE"):
-                                try:
-                                    os.waitpid(pid, os.WNOHANG)
-                                except Exception:
-                                    pass
                                 try:
                                     os.remove(pid_file)
                                 except Exception:
