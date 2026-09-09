@@ -16,6 +16,7 @@ Security design requirements (verify via tests and CI):
 from __future__ import annotations
 
 import json
+import tempfile
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -350,7 +351,9 @@ class PublishPipeline:
         artifact_id: str,
     ) -> Tuple[bool, ...]:
         """Execute build stage."""
-        output_dir = config.output_dir or Path(f"/tmp/ccea_build_{artifact_id}")
+        # Not a hardcoded "/tmp": that path does not exist on Windows, and on a
+        # shared POSIX host it is a name another user can predict.
+        output_dir = config.output_dir or Path(tempfile.gettempdir()) / f"ccea_build_{artifact_id}"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         oci_result = None

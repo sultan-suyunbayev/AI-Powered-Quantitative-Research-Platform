@@ -2,6 +2,12 @@
 
 cpdef int compute_n_features(list layout)
 
+cpdef Py_ssize_t required_feature_count(
+    Py_ssize_t n_norm_cols,
+    int max_num_tokens,
+    bint enable_validity_flags,
+)
+
 cdef void build_observation_vector_c(
     float price,
     float prev_price,

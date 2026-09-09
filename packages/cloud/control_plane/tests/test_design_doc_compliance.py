@@ -20,6 +20,11 @@ from typing import Dict
 from uuid import UUID, uuid4
 
 import pytest
+
+from ..routers.agent_lifecycle import (
+    MAX_SUPPORTED_VERSION,
+    MIN_SUPPORTED_VERSION,
+)
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -672,6 +677,18 @@ class TestPollCommandsSigning:
         set_cloud_signer(signer)
 
         try:
+            # Design Doc 10.3/10.4: version negotiation is mandatory before any
+            # command operation, and the poll endpoint answers 428 without it.
+            negotiated = await client.post(
+                "/api/v1/agent/negotiate-version",
+                headers=agent_headers,
+                json={
+                    "min_supported": MIN_SUPPORTED_VERSION,
+                    "max_supported": MAX_SUPPORTED_VERSION,
+                },
+            )
+            assert negotiated.status_code == 200, negotiated.text
+
             response = await client.get(
                 "/api/v1/agent/commands/poll",
                 headers=agent_headers,

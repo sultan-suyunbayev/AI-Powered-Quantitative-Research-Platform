@@ -75,7 +75,9 @@ def _load_model():
                         f"Convert to secure format: python tools/convert_legacy_models.py",
                         UserWarning,
                     )
-                    model = torch.load(path, map_location="cpu", weights_only=False)
+                    # Reachable only with ALLOW_UNSAFE_MODEL_LOAD set, after the
+                    # warning above says what it allows.
+                    model = torch.load(path, map_location="cpu", weights_only=False)  # nosec B614
                 else:
                     raise ModelLoadError(
                         f"SECURITY: Model {path} contains non-tensor data and cannot be loaded securely. "

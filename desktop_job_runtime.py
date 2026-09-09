@@ -170,7 +170,10 @@ def dispatch_worker(argv: Optional[Sequence[str]] = None) -> Optional[int]:
     if mode == _WORKER_CODE:
         sys.argv = ["-c", *job_args]
         namespace = {"__name__": "__main__", "__file__": "<riven-worker>"}
-        exec(compile(target, "<riven-worker>", "exec"), namespace, namespace)
+        # The -c mode of a frozen worker: `target` is this process's own argv,
+        # the same trust boundary as `python -c`. The module modes below are
+        # checked against WORKER_MODULES instead.
+        exec(compile(target, "<riven-worker>", "exec"), namespace, namespace)  # nosec B102
         return 0
 
     module = target if mode == _WORKER_MODULE else _script_to_module(target)

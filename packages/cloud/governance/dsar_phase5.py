@@ -32,6 +32,7 @@ import base64
 import hashlib
 import hmac
 import json
+import tempfile
 import logging
 import secrets
 import threading
@@ -776,7 +777,8 @@ class DSARPhase5Service:
         self._consent_service = consent_service
         self._data_fetcher = data_fetcher
         self._data_deleter = data_deleter
-        self._export_dir = export_dir or Path("/tmp/dsar_exports")
+        # See dsar.py: the platform temp directory, not a hardcoded "/tmp".
+        self._export_dir = export_dir or Path(tempfile.gettempdir()) / "dsar_exports"
         self._base_url = base_url
         self._audit_callback = audit_callback
 

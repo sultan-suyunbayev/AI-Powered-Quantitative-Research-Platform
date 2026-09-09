@@ -5,13 +5,16 @@ import pytest
 pytest.importorskip("sortedcontainers")
 
 try:
+    # SimulationWorkspace and CythonLOB are cimported by lob_state_cython, not
+    # re-exported from it: asking for them there raised ImportError and skipped
+    # this whole module. They belong to coreworkspace and fast_lob.
     from lob_state_cython import (
         EnvState,
         run_full_step_logic_cython,
-        SimulationWorkspace,
-        CythonLOB,
         CyMicrostructureGenerator,
     )
+    from coreworkspace import SimulationWorkspace
+    from fast_lob import CythonLOB
 
     HAVE_LOB_STATE_CYTHON = True
 except ImportError:

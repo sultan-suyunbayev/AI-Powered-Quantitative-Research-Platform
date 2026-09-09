@@ -99,19 +99,6 @@ def _base_state(price_scale: int) -> EnvState:
     return state
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "run_full_step_logic_cython is written against a LOB interface fast_lob.CythonLOB "
-        "does not provide: it calls match_market_order_cy(.., offsets, fully_executed_ids), "
-        "while the class has match_market_order(.., out_is_buy, out_is_self, max_len) and no "
-        "fully-executed reporting. Any market event in the step raises AttributeError. "
-        "Nothing in production reaches it -- environment.pyx has its own step path and "
-        "cimports only EnvState/CyMicrostructureGenerator. Reconciling the two would mean "
-        "writing the missing matching semantics rather than restoring them. "
-        "See docs/AUDIT_2026-09.md, 'Still open'."
-    ),
-)
 def test_simulator_flip_keeps_cash_and_equity_consistent() -> None:
     price_scale = 100
     workspace = SimulationWorkspace(8)
@@ -190,8 +177,15 @@ def test_simulator_flip_keeps_cash_and_equity_consistent() -> None:
     net_worth_expected = cash_expected + final_units * final_mid
     step_pnl_expected = net_worth_expected - prev_net_worth
 
-    assert state.cash == pytest.approx(cash_expected, rel=1e-12)
-    assert state.units == pytest.approx(final_units, rel=1e-12)
-    assert state.realized_pnl_cum == pytest.approx(realized_expected, rel=1e-12)
-    assert state.net_worth == pytest.approx(net_worth_expected, rel=1e-9)
-    assert info["step_pnl"] == pytest.approx(step_pnl_expected, rel=1e-9)
+    # EnvState stores cash, units and net_worth as `cdef public float`: 32 bits,
+    # roughly seven decimal digits, an epsilon of 1.2e-7. Every quantity here
+    # either lives in one of those fields or is accumulated from one, so the bar
+    # is float32's and not float64's -- a single store already rounds by up to
+    # half an ULP, 6e-5 at a cash of about 1120.
+    FLOAT32_REL = 1e-6
+
+    assert state.cash == pytest.approx(cash_expected, rel=FLOAT32_REL)
+    assert state.units == pytest.approx(final_units, rel=FLOAT32_REL)
+    assert state.realized_pnl_cum == pytest.approx(realized_expected, rel=FLOAT32_REL)
+    assert state.net_worth == pytest.approx(net_worth_expected, rel=FLOAT32_REL)
+    assert info["step_pnl"] == pytest.approx(step_pnl_expected, rel=FLOAT32_REL)

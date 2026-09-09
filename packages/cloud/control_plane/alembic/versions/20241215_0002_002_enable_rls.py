@@ -146,7 +146,7 @@ def upgrade() -> None:
                     WHERE id = ccea_get_current_workspace_id()
                 )
             );
-        """
+        """  # nosec B608  # table names from this migration's own list
         )
 
     # Create helper view for tenant-safe command polling

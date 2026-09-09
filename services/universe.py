@@ -152,11 +152,15 @@ def _main() -> None:
     )
 
 
+# There is deliberately no freshness check at import time. This module used to
+# call get_symbols() when it was imported, which reads the cached symbol list
+# and, once that file is a day old, fetches the spot listing from Binance and
+# writes it back -- so importing it performed network I/O and rewrote a tracked
+# file. core_config imports this module, and most of the codebase imports
+# core_config, so `import core_config` reached out to an exchange.
+#
+# Nothing is lost: get_symbols() checks staleness on every call, so the refresh
+# still happens wherever the symbols are actually wanted -- core_config's
+# Field(default_factory=get_symbols), script_live, and the CLI below.
 if __name__ == "__main__":  # pragma: no cover - CLI is tested via integration
     _main()
-else:  # Perform a freshness check when imported
-    try:  # pragma: no cover - network may be unavailable during tests
-        get_symbols()
-    except Exception:
-        # The refresh is best effort; failures are surfaced on explicit call.
-        pass

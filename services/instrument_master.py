@@ -394,7 +394,8 @@ class InstrumentMaster:
             "https://api.openfigi.com/v3/mapping", data=body, headers=headers, method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
+            # The URL is the literal above, not something a caller supplies.
+            with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310  # nosec B310
                 payload = json.loads(r.read().decode("utf-8"))
             data = payload[0].get("data") if payload and isinstance(payload, list) else None
             if not data:

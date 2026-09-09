@@ -167,9 +167,14 @@ def _http_get_json(
     if query:
         delimiter = "&" if parse.urlparse(url).query else "?"
         full_url = f"{url}{delimiter}{query}"
+    # urllib opens file:// and ftp:// as readily as https://, and this URL comes
+    # from configuration, so a config value could turn a fetch into a local file
+    # read. Refuse anything that is not HTTP before opening it.
+    if parse.urlsplit(full_url).scheme not in ("http", "https"):
+        raise ValueError(f"refusing to fetch a non-HTTP URL: {full_url!r}")
     req = request.Request(full_url, headers={"User-Agent": USER_AGENT, **(headers or {})})
     try:
-        with request.urlopen(req, timeout=timeout) as resp:
+        with request.urlopen(req, timeout=timeout) as resp:  # nosec B310  # scheme checked above
             charset = resp.headers.get_content_charset() or "utf-8"
             body = resp.read().decode(charset)
     except urlerror.HTTPError as exc:  # pragma: no cover - network failure

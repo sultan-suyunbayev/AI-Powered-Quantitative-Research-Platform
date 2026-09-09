@@ -270,7 +270,9 @@ class InMemoryDataRepository:
             if "email" in record:
                 record["email"] = "anonymized@deleted.local"
             if "ip_address" in record:
-                record["ip_address"] = "0.0.0.0"
+                # An anonymisation placeholder written into a record, not an
+                # address anything binds to.
+                record["ip_address"] = "0.0.0.0"  # nosec B104
             if "name" in record:
                 record["name"] = "ANONYMIZED"
         return count

@@ -392,7 +392,7 @@ class OrderJournal:
 
         with self._lock:
             cursor = self._conn.execute(
-                f"UPDATE orders SET {', '.join(updates)} WHERE entry_id = ?",
+                f"UPDATE orders SET {', '.join(updates)} WHERE entry_id = ?",  # nosec B608  # column names from a fixed set
                 values,
             )
             self._conn.commit()
@@ -466,7 +466,7 @@ class OrderJournal:
             SELECT * FROM orders
             WHERE status IN ({placeholders})
             ORDER BY created_at ASC
-            """,
+            """,  # nosec B608  # column names from a fixed set
             values,
         )
         return [self._row_to_entry(row) for row in cursor.fetchall()]

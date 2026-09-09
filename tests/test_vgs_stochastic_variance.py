@@ -69,16 +69,6 @@ class TestPerParameterStochasticVariance:
             f"[OK] Per-parameter variance: param1={var_per_param[0]:.6f}, param2={var_per_param[1]:.6f}"
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Same defect as test_heterogeneous_constant_gradients_zero_variance: "
-            "VGS v3.1 takes the spatial mean and mean-of-squares before the EMA, so "
-            "Var = E[g^2] - E[g]^2 reports spatial heterogeneity rather than the "
-            "temporal noise VGS exists to measure. Recorded in "
-            "docs/AUDIT_2026-09.md; fixing it changes the state_dict format."
-        ),
-    )
     def test_stochastic_vs_spatial_variance(self):
         """Test that stochastic variance differs from spatial variance."""
 
@@ -94,13 +84,18 @@ class TestPerParameterStochasticVariance:
 
         # Apply gradients with different SCALES but LOW temporal variance
         for step in range(30):
-            # layer1: small but stable gradients (low temporal variance)
+            # The statistic is Var/|E[g]|², a squared coefficient of variation,
+            # so "stable" has to mean small *relative* to the signal: noise of
+            # 0.005 on a mean of 0.01 is a CV of 50% and CV² of 0.25, which is
+            # not stability. Both layers get 1% noise; the scales still differ
+            # by 100x, so spatial heterogeneity is as large as before.
+            # layer1: small scale, 1% temporal noise
             for p in model.layer1.parameters():
-                p.grad = torch.randn_like(p) * 0.005 + 0.01  # scale=0.01, noise=0.005
+                p.grad = torch.randn_like(p) * 0.0001 + 0.01  # scale=0.01, CV=1%
 
-            # layer2: large but stable gradients (low temporal variance)
+            # layer2: large scale, the same 1% temporal noise
             for p in model.layer2.parameters():
-                p.grad = torch.randn_like(p) * 0.005 + 1.0  # scale=1.0, noise=0.005
+                p.grad = torch.randn_like(p) * 0.01 + 1.0  # scale=1.0, CV=1%
 
             vgs.scale_gradients()
             vgs.step()
@@ -180,15 +175,25 @@ class TestAggregationMethods:
         # Get normalized variance (90th percentile)
         global_var = vgs.get_normalized_variance()
 
-        # Compute per-parameter variances manually.
-        # Since v3.1 _param_grad_sq_ema holds E[g**2], not Var[g]; the variance is
-        # E[g**2] - E[g]**2. Treating it as the variance overstates every entry by
-        # exactly one after normalisation.
+        # Reconstruct the statistic the way v4.0 defines it:
+        #   mean_j(v_j) = S - mean_j(M_j²)
+        # Squaring each element's temporal mean before averaging is the whole
+        # point -- averaging first and squaring after leaves Var_spatial(m) in
+        # the result, which is what v3.1 reported.
         bias_correction = 1.0 - vgs.beta**vgs._step_count
-        mean_corrected = vgs._param_grad_mean_ema / bias_correction  # E[g]
-        sq_corrected = vgs._param_grad_sq_ema / bias_correction  # E[g**2]
-        var_per_param = sq_corrected - mean_corrected.pow(2)  # Var[g]
-        normalized_var_per_param = var_per_param / (mean_corrected.pow(2) + vgs.eps)
+        mean_corrected = vgs._param_grad_mean_ema / bias_correction  # E[mean(g)]
+        sq_corrected = vgs._param_grad_sq_ema / bias_correction  # E[mean(g²)]
+        mean_sq_elem = torch.stack(
+            [
+                (elem.to(torch.float64) / bias_correction).pow(2).mean()
+                for elem in vgs._param_grad_mean_elem_ema
+            ]
+        )
+        var_per_param = (sq_corrected.to(torch.float64) - mean_sq_elem).to(sq_corrected.dtype)
+        var_per_param = torch.clamp(var_per_param, min=0.0)
+        normalized_var_per_param = var_per_param / (
+            torch.clamp(mean_corrected.abs().pow(2), min=1e-12) + vgs.eps
+        )
 
         # 90th percentile should be close to torch.quantile(..., 0.9)
         expected_p90 = torch.quantile(normalized_var_per_param, 0.9).item()

@@ -603,6 +603,18 @@ cpdef tuple run_full_step_logic_cython(
     cdef const AgentOrderInfo* info_ptr
     cdef int trades_made_this_event, executed_count_this_event
     cdef AgentOrderInfo order_info
+    # Buffers for CythonLOB.match_market_order. It writes int and long long
+    # where the workspace keeps char and unsigned long long, and it always
+    # writes from index 0, so a match is taken here and copied to its place.
+    cdef bint match_buffers_ready = False
+    cdef double[::1] match_prices
+    cdef double[::1] match_volumes
+    cdef int[::1] match_is_buy
+    cdef int[::1] match_is_self
+    cdef long long[::1] match_ids
+    cdef Py_ssize_t trade_capacity
+    cdef int match_capacity, match_room, k
+    cdef long long maker_id
     
     
     
@@ -629,6 +641,19 @@ cpdef tuple run_full_step_logic_cython(
     assert is_buy_side_all_arr.is_c_contig(), "Workspace is_buy_side_all_arr must be C-contiguous"
     assert taker_is_agent_all_arr.is_c_contig(), "Workspace taker_is_agent_all_arr must be C-contiguous"
     assert fully_executed_ids_all_arr.is_c_contig(), "Workspace fully_executed_ids_all_arr must be C-contiguous"
+
+    # SimulationWorkspace takes its capacity as a constructor argument, so the
+    # limit comes from the buffers rather than from MAX_TRADES_PER_STEP.
+    trade_capacity = min(
+        prices_all_arr.shape[0],
+        volumes_all_arr.shape[0],
+        maker_ids_all_arr.shape[0],
+        maker_is_agent_all_arr.shape[0],
+        timestamps_all_arr.shape[0],
+        is_buy_side_all_arr.shape[0],
+        taker_is_agent_all_arr.shape[0],
+    )
+    match_capacity = <int>trade_capacity + 1
     
     # ==============================================================
     # 1. ФАЗА ПРЕДЛОЖЕНИЯ (PROPOSE)
@@ -793,16 +818,52 @@ cpdef tuple run_full_step_logic_cython(
 
             elif current_event.type == MicroEventType.MARKET:
                 is_agent_taker = is_agent_event
-                trades_made_this_event, fee_total_event = lob_clone.match_market_order_cy(
+                if not match_buffers_ready:
+                    # Allocated on the first market event; most steps have none.
+                    match_prices = np.empty(match_capacity, dtype=np.float64)
+                    match_volumes = np.empty(match_capacity, dtype=np.float64)
+                    match_is_buy = np.empty(match_capacity, dtype=np.int32)
+                    match_is_self = np.empty(match_capacity, dtype=np.int32)
+                    match_ids = np.empty(match_capacity, dtype=np.int64)
+                    match_buffers_ready = True
+
+                # One past the room left: a match that would overflow the
+                # workspace then reports one trade more than fits and raises
+                # below, instead of being truncated in silence.
+                match_room = <int>trade_capacity - total_trades_count
+                trades_made_this_event, fee_total_event = lob_clone.match_market_order(
                     current_event.is_buy, current_event.size, state.step_idx, is_agent_taker,
-                    prices_all_arr, volumes_all_arr, maker_ids_all_arr,
-                    maker_is_agent_all_arr, timestamps_all_arr,
-                    fully_executed_ids_all_arr,
-                    total_trades_count, total_fully_executed_count
+                    match_prices, match_volumes, match_is_buy, match_is_self, match_ids,
+                    match_room + 1
                 )
-                if trades_made_this_event > 0:
-                    is_buy_side_all_arr[total_trades_count : total_trades_count + trades_made_this_event] = current_event.is_buy
-                    taker_is_agent_all_arr[total_trades_count : total_trades_count + trades_made_this_event] = is_agent_taker
+                if trades_made_this_event > match_room:
+                    raise MemoryError("Workspace buffer overflow during event processing loop.")
+
+                for j in range(trades_made_this_event):
+                    k = total_trades_count + j
+                    maker_id = match_ids[j]
+                    # C++ writes px_ticks / PRICE_SCALE; this column is scaled,
+                    # since the PnL loop below divides by state.price_scale.
+                    prices_all_arr[k] = match_prices[j] * state.price_scale
+                    volumes_all_arr[k] = match_volumes[j]
+                    is_buy_side_all_arr[k] = <char>match_is_buy[j]
+                    maker_is_agent_all_arr[k] = <char>match_is_self[j]
+                    maker_ids_all_arr[k] = <unsigned long long>maker_id
+                    # Every trade of one market event carries the timestamp the
+                    # caller handed to the match.
+                    timestamps_all_arr[k] = <long long>state.step_idx
+                    taker_is_agent_all_arr[k] = <char>is_agent_taker
+                    # A maker leaves the book exactly when the match consumed it
+                    # whole: _match_logic pops it and erases its index entry only
+                    # then. Self-trade prevention pops a maker too, but records no
+                    # trade, so its id never reaches this list.
+                    if not lob_clone.contains_order(<unsigned long long>maker_id):
+                        if total_fully_executed_count + executed_count_this_event >= fully_executed_ids_all_arr.shape[0]:
+                            raise MemoryError("Workspace buffer overflow during event processing loop.")
+                        fully_executed_ids_all_arr[
+                            total_fully_executed_count + executed_count_this_event
+                        ] = maker_id
+                        executed_count_this_event += 1
 
             elif current_event.type == MicroEventType.CANCEL:
                 if is_agent_event:

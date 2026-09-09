@@ -9,6 +9,8 @@ from typing import Dict, Any
 from uuid import uuid4
 
 import pytest
+
+from ..routers.config_blobs import VALID_CONFIG_TYPES
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -879,8 +881,12 @@ class TestListConfigTypes:
         assert response.status_code == 200
         data = response.json()
 
+        # The endpoint returns sorted(VALID_CONFIG_TYPES), which is the same
+        # allowlist POST /config-blobs enforces. command_payload came with
+        # Design Doc 12.2 (command payloads) and sbom with 8.4 (SBOM storage).
         expected_types = [
             "alert",
+            "command_payload",
             "custom",
             "data",
             "environment",
@@ -889,9 +895,12 @@ class TestListConfigTypes:
             "model",
             "monitoring",
             "risk",
+            "sbom",
             "strategy",
         ]
         assert data == expected_types
+        # ... and the two cannot drift apart without this failing.
+        assert set(data) == set(VALID_CONFIG_TYPES)
 
     async def test_list_config_types_unauthenticated(
         self,

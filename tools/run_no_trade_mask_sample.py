@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import logging  # noqa: F401 ensures stdlib is loaded before path append
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -9,7 +10,7 @@ from apply_no_trade_mask import main
 
 
 def run(mode: str | None) -> None:
-    out = f"/tmp/no_trade_sample_{mode or 'mask'}.csv"
+    out = os.path.join(tempfile.gettempdir(), f"no_trade_sample_{mode or 'mask'}.csv")
     sys.argv = [
         "no-trade-mask",
         "--data",

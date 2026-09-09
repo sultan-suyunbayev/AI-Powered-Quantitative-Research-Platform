@@ -18,6 +18,8 @@ from services.universe import (
     _DEFAULT_TTL_SECONDS,
 )
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 class TestThrottledGet:
     """Test _throttled_get helper function."""
@@ -608,3 +610,88 @@ class TestEdgeCases:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
+
+
+class TestImportHasNoSideEffects:
+    """Importing the module must not reach the network or write to the tree."""
+
+    def test_importing_does_not_fetch_or_write(self):
+        """`import services.universe` used to refresh the cache from Binance.
+
+        The module ended with a bare ``get_symbols()`` guarded by
+        ``if __name__ == "__main__" ... else``, so importing it read
+        ``data/universe/symbols.json`` and, once that file was a day old,
+        fetched the spot listing and wrote it back over the file. core_config
+        imports this module, and most of the codebase imports core_config, so
+        ``import core_config`` reached an exchange and rewrote a tracked file.
+
+        The check runs in a child interpreter because an import side effect
+        happens once, long before this test. The child replaces requests.get
+        first, so nothing leaves the machine either way; what is asserted is
+        whether the import reached for it.
+        """
+        import subprocess
+        import sys
+        import textwrap
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = Path(tmpdir) / "symbols.json"
+            cache.write_text(json.dumps(["BTCUSDT"]), encoding="utf-8")
+            # Two days old, well past the module's 24-hour TTL.
+            stale = time.time() - 2 * 24 * 60 * 60
+            os.utime(cache, (stale, stale))
+
+            program = textwrap.dedent(
+                """
+                import json, sys
+                import requests
+
+                calls = []
+
+                def _record(url, *args, **kwargs):
+                    calls.append(url)
+                    raise RuntimeError("this probe sends nothing")
+
+                requests.get = _record
+
+                import services.universe  # noqa: F401
+
+                print(json.dumps(calls))
+                """
+            )
+
+            result = subprocess.run(
+                [sys.executable, "-c", program],
+                capture_output=True,
+                text=True,
+                cwd=str(REPO_ROOT),
+                timeout=120,
+            )
+
+        assert result.returncode == 0, result.stderr
+        calls = json.loads(result.stdout.strip().splitlines()[-1])
+        assert calls == [], (
+            "importing services.universe reached for the network: "
+            f"{calls}. get_symbols() checks staleness on every call, so the "
+            "refresh belongs where the symbols are wanted, not in an import."
+        )
+
+    def test_get_symbols_still_refreshes_a_stale_cache(self):
+        """Removing the import hook must not stop an explicit call refreshing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = os.path.join(tmpdir, "symbols.json")
+            with open(cache, "w", encoding="utf-8") as fh:
+                json.dump(["OLDUSDT"], fh)
+            stale = time.time() - 2 * 24 * 60 * 60
+            os.utime(cache, (stale, stale))
+
+            def _write_fresh(out, **_kwargs):
+                with open(out, "w", encoding="utf-8") as fh:
+                    json.dump(["BTCUSDT"], fh)
+                return ["BTCUSDT"]
+
+            with patch("services.universe.run", side_effect=_write_fresh) as mock_run:
+                symbols = get_symbols(out=cache)
+
+            mock_run.assert_called_once()
+            assert symbols == ["BTCUSDT"]

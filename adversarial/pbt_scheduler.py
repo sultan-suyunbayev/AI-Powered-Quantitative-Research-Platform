@@ -401,7 +401,10 @@ class PBTScheduler:
                             f"Using unsafe fallback (ALLOW_UNSAFE_MODEL_LOAD=1). "
                             f"SECURITY METRIC: pbt_unsafe_load_count=1"
                         )
-                        checkpoint = torch.load(
+                        # Deliberate, and only reachable with
+                        # ALLOW_UNSAFE_MODEL_LOAD=1 after the secure load failed
+                        # and the warning above was emitted.
+                        checkpoint = torch.load(  # nosec B614
                             source_member.checkpoint_path, map_location="cpu", weights_only=False
                         )
                     else:

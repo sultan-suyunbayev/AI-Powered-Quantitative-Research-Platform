@@ -881,10 +881,11 @@ class TestStrategy:
             registry_config = RegistryConfig(local_path=registry_path)
             publisher = ArtifactPublisher(registry_config)
 
-            # BuildResult.artifact_path is the bundle directory; publish()
-            # takes the artifact file inside it. See docs/AUDIT_2026-09.md --
-            # composing the two directly does not work.
-            artifact_file = build_result.artifact_path / "artifact.zip"
+            # artifact_path is the bundle directory, artifact_file is the
+            # artifact inside it, and publish() takes the file. See
+            # docs/AUDIT_2026-09.md 14.9.
+            artifact_file = build_result.artifact_file
+            assert artifact_file == build_result.artifact_path / "artifact.zip"
             assert artifact_file.exists(), "Bundle must contain the packaged artifact"
 
             publish_result = publisher.publish(

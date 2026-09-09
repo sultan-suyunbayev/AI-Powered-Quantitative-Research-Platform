@@ -451,7 +451,13 @@ class TestCreateTelemetryEvent:
                 "event_type": "test_event",
                 "event_timestamp": datetime.now(timezone.utc).isoformat(),
                 "telemetry_level": "invalid_level",
-                "payload": {"test": "data"},
+                # The payload has to be one the middleware accepts, or the
+                # request never reaches the check this test is about:
+                # TelemetryValidationMiddleware runs first and rejects an
+                # unknown field with 422. "count" is in
+                # ALLOWED_AGGREGATED_FIELDS, which is what an unrecognised
+                # level falls back to.
+                "payload": {"count": 1},
                 "redaction_applied": True,
             },
         )
@@ -479,8 +485,13 @@ class TestCreateTelemetryEvent:
             },
         )
 
-        assert response.status_code == 403
-        assert "enterprise tier" in response.json()["detail"]
+        # The same rule, enforced one layer out: raw order events need the
+        # enterprise tier, and without the enterprise header the middleware
+        # rejects the payload before the router can answer 403.
+        assert response.status_code == 422
+        body = response.json()
+        assert body["type"] == "telemetry_validation_error"
+        assert any(v["type"] == "raw_order_data" for v in body["violations"])
 
     async def test_create_event_detailed_requires_redaction(
         self,
@@ -502,8 +513,12 @@ class TestCreateTelemetryEvent:
             },
         )
 
-        assert response.status_code == 400
-        assert "redaction_applied" in response.json()["detail"]
+        # Non-aggregated telemetry requires redaction_applied=True, and the
+        # middleware is where that is enforced for a request from outside.
+        assert response.status_code == 422
+        body = response.json()
+        assert body["type"] == "telemetry_validation_error"
+        assert any(v["field_path"] == "redaction_applied" for v in body["violations"])
 
     async def test_create_event_agent_not_found(
         self,

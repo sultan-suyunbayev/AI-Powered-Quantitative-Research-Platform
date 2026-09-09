@@ -137,6 +137,56 @@ class StateAdversarialPPO:
             return self.model.policy.predict_values(obs, lstm_states, episode_starts)
         return self.model.policy.predict_values(obs)
 
+    @staticmethod
+    def _needs_full_batch(lstm_states: Optional[Any], episode_starts: Optional[Tensor]) -> bool:
+        """Whether a forward pass has to see the whole minibatch.
+
+        A recurrent policy carries state of shape [n_layers, n_seq, hidden]: the
+        second axis counts sequences, not samples, so the batch-axis split that
+        separates clean rows from adversarial ones cannot be applied to it. When
+        a state is present every forward pass takes the whole minibatch with the
+        whole state and the split happens afterwards, on the batch axis alone.
+        A feedforward policy treats rows independently, so slicing first gives
+        the same numbers for less work, and that path is kept.
+        """
+        return lstm_states is not None and episode_starts is not None
+
+    def _per_sample_kl(
+        self,
+        dist_clean: Any,
+        dist_adv: Any,
+        actions: Tensor,
+    ) -> Tuple[Tensor, str]:
+        """KL(clean || adv) for each sample, and how it was obtained.
+
+        Returns a tensor of shape [batch_size]. Event dimensions are summed,
+        because the KL between two factorised distributions is the sum of the
+        per-coordinate KLs -- averaging them, as the previous analytical branch
+        did, divides by the action dimension and disagrees with the Monte Carlo
+        fallback, whose log_prob is already summed.
+        """
+        try:
+            # Analytical KL divergence (exact for Gaussian distributions)
+            # References:
+            # - PyTorch: torch.distributions.kl.kl_divergence
+            # - For Normal distributions: KL(π₁||π₂) = log(σ₂/σ₁) + (σ₁²+(μ₁-μ₂)²)/(2σ₂²) - 1/2
+            kl = torch.distributions.kl_divergence(dist_clean, dist_adv)
+            method = "analytical"
+        except NotImplementedError:
+            # Fallback: Monte Carlo approximation
+            # KL(π₁||π₂) ≈ E_π₁[log π₁(a) - log π₂(a)]
+            # Use actions sampled from clean distribution (from rollout buffer)
+            with torch.no_grad():
+                log_probs_clean = dist_clean.log_prob(actions)
+
+            log_probs_adv = dist_adv.log_prob(actions)
+            kl = log_probs_clean - log_probs_adv
+            method = "monte_carlo"
+
+        while kl.ndim > 1:
+            kl = kl.sum(dim=-1)
+        return kl, method
+
     @property
     def is_adversarial_enabled(self) -> bool:
         """Check if adversarial training is currently enabled."""
@@ -333,25 +383,35 @@ class StateAdversarialPPO:
         old_log_probs_clean = old_log_probs[:num_clean]
         old_log_probs_adv = old_log_probs[num_clean:]
 
-        # Split recurrent states if present
-        lstm_states_clean = None
-        lstm_states_adv = None
-        episode_starts_clean = None
-        episode_starts_adv = None
-        if lstm_states is not None:
-            lstm_states_clean = tuple(s[:, :num_clean] for s in lstm_states)
-            lstm_states_adv = tuple(s[:, num_clean:] for s in lstm_states)
-        if episode_starts is not None:
-            episode_starts_clean = episode_starts[:num_clean]
-            episode_starts_adv = episode_starts[num_clean:]
+        # The recurrent state is not split. Its second axis counts sequences and
+        # the split above counts samples; slicing it with a batch index lines the
+        # two up only when a minibatch holds one step per sequence. With a state
+        # present the attack runs the policy over the whole minibatch and reads
+        # the adversarial rows back out, which is what a recurrent policy needs
+        # anyway -- a row's hidden state depends on the rows before it. Without a
+        # state the rows are independent, so the slice is equivalent and cheaper.
+        full_batch = self._needs_full_batch(lstm_states, episode_starts)
+        attack_states = lstm_states if full_batch else None
+        attack_starts = episode_starts if full_batch else None
+        actions_for_attack = actions if full_batch else actions_adv
+
+        def _attack_input(perturbed: Tensor) -> Tensor:
+            """The batch to feed the policy so `perturbed` sees the right state."""
+            return torch.cat([states_clean, perturbed], dim=0) if full_batch else perturbed
+
+        def _attack_rows(values: Tensor) -> Tensor:
+            """The adversarial rows of a per-sample quantity."""
+            return values[num_clean:] if full_batch else values
 
         # Generate adversarial perturbations for policy
         states_adv_perturbed = states_adv_base
         if self.config.attack_policy and num_adversarial > 0:
             # Create policy loss function for attack
             def policy_loss_fn(s_perturbed: Tensor) -> Tensor:
-                dist = self._get_distribution(s_perturbed, lstm_states_adv, episode_starts_adv)
-                log_probs = dist.log_prob(actions_adv)
+                dist = self._get_distribution(
+                    _attack_input(s_perturbed), attack_states, attack_starts
+                )
+                log_probs = _attack_rows(dist.log_prob(actions_for_attack))
                 ratio = torch.exp(log_probs - old_log_probs_adv)
                 clipped_ratio = torch.clamp(ratio, 1.0 - clip_range, 1.0 + clip_range)
                 # Negative because we want to maximize loss (worst-case)
@@ -387,7 +447,9 @@ class StateAdversarialPPO:
         if self.config.attack_value and num_adversarial > 0:
             # Generate perturbations for value function
             def value_loss_fn(s_perturbed: Tensor) -> Tensor:
-                values = self._predict_values(s_perturbed, lstm_states_adv, episode_starts_adv)
+                values = _attack_rows(
+                    self._predict_values(_attack_input(s_perturbed), attack_states, attack_starts)
+                )
                 return nn.functional.mse_loss(values, returns_adv.view_as(values))
 
             delta_value = self.perturbation_gen.generate_perturbation(
@@ -407,31 +469,19 @@ class StateAdversarialPPO:
         robust_kl_penalty = 0.0
         kl_method = "none"
         if self.config.robust_kl_coef > 0 and num_adversarial > 0:
-            # Get distributions from clean and adversarial states
+            # KL(π(·|s) ‖ π(·|s+δ)) on the same rows: the clean side is the
+            # unperturbed copy of exactly the states the attack perturbed.
             with torch.no_grad():
                 dist_clean = self._get_distribution(
-                    states_adv_base, lstm_states_adv, episode_starts_adv
+                    _attack_input(states_adv_base), attack_states, attack_starts
                 )
 
             dist_adv = self._get_distribution(
-                states_adv_perturbed, lstm_states_adv, episode_starts_adv
+                _attack_input(states_adv_perturbed), attack_states, attack_starts
             )
 
-            # Compute KL divergence: KL(clean || adversarial)
-            # Use analytical KL divergence when available (exact for Gaussian)
-            try:
-                # Analytical KL divergence (exact for Gaussian distributions)
-                kl_div = torch.distributions.kl_divergence(dist_clean, dist_adv).mean()
-                kl_method = "analytical"
-            except NotImplementedError:
-                # Fallback: Monte Carlo approximation
-                # KL(π₁||π₂) ≈ E_π₁[log π₁(a) - log π₂(a)]
-                with torch.no_grad():
-                    log_probs_clean = dist_clean.log_prob(actions_adv)
-
-                log_probs_adv = dist_adv.log_prob(actions_adv)
-                kl_div = (log_probs_clean - log_probs_adv).mean()
-                kl_method = "monte_carlo"
+            kl_per_sample, kl_method = self._per_sample_kl(dist_clean, dist_adv, actions_for_attack)
+            kl_div = _attack_rows(kl_per_sample).mean()
 
             robust_kl_penalty = self.config.robust_kl_coef * kl_div
             self._total_robust_kl_penalty += robust_kl_penalty.item()
@@ -619,21 +669,33 @@ class StateAdversarialPPO:
         advantages_adv = advantages[num_clean:]
         old_log_probs_adv = old_log_probs[num_clean:]
 
-        # Split recurrent states if present
-        lstm_states_adv = None
-        episode_starts_adv = None
-        if lstm_states is not None:
-            lstm_states_adv = tuple(s[:, num_clean:] for s in lstm_states)
-        if episode_starts is not None:
-            episode_starts_adv = episode_starts[num_clean:]
+        # The recurrent state is not split; see the note in
+        # compute_adversarial_loss. Its second axis counts sequences, so a
+        # batch-axis slice of it is wrong whenever a minibatch carries more than
+        # one step per sequence -- which is the ordinary case, and the reason
+        # SA-PPO could not run against a recurrent policy at all.
+        full_batch = self._needs_full_batch(lstm_states, episode_starts)
+        attack_states = lstm_states if full_batch else None
+        attack_starts = episode_starts if full_batch else None
+        actions_for_attack = actions if full_batch else actions_adv
+
+        def _attack_input(perturbed: Tensor) -> Tensor:
+            """The batch to feed the policy so `perturbed` sees the right state."""
+            return torch.cat([states_clean, perturbed], dim=0) if full_batch else perturbed
+
+        def _attack_rows(values: Tensor) -> Tensor:
+            """The adversarial rows of a per-sample quantity."""
+            return values[num_clean:] if full_batch else values
 
         # Generate adversarial perturbations for policy
         states_adv_perturbed = states_adv_base
         if self.config.attack_policy and num_adversarial > 0:
             # Create policy loss function for attack
             def policy_loss_fn(s_perturbed: Tensor) -> Tensor:
-                dist = self._get_distribution(s_perturbed, lstm_states_adv, episode_starts_adv)
-                log_probs = dist.log_prob(actions_adv)
+                dist = self._get_distribution(
+                    _attack_input(s_perturbed), attack_states, attack_starts
+                )
+                log_probs = _attack_rows(dist.log_prob(actions_for_attack))
                 ratio = torch.exp(log_probs - old_log_probs_adv)
                 clipped_ratio = torch.clamp(ratio, 1.0 - clip_range, 1.0 + clip_range)
                 # Negative because we want to maximize loss (worst-case)
@@ -665,7 +727,7 @@ class StateAdversarialPPO:
 
         return states_combined, sample_mask, info
 
-    def compute_robust_kl_penalty(
+    def compute_robust_kl_penalty_tensor(
         self,
         states_clean: Tensor,
         states_adv: Tensor,
@@ -674,31 +736,55 @@ class StateAdversarialPPO:
         lstm_states_adv: Optional[Any] = None,
         episode_starts_clean: Optional[Tensor] = None,
         episode_starts_adv: Optional[Tensor] = None,
-    ) -> Tuple[float, Dict[str, float]]:
-        """Compute robust KL regularization between clean and adversarial policies.
+        sample_mask: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Dict[str, float]]:
+        """The robust KL penalty, still attached to the graph.
 
-        Uses analytical KL divergence when available (exact for Gaussian).
+        SA-PPO regularises with E_s[KL(π(·|s) ‖ π(·|s+δ))] (Zhang et al. 2020,
+        "Robust Deep Reinforcement Learning against Adversarial Perturbations on
+        State Observations"): both distributions are conditioned on the *same*
+        state, one copy of it perturbed. `states_clean` and `states_adv` are
+        therefore the same rows in the same order, and `sample_mask` -- when
+        given -- says which of them carry a perturbation, so the mean is taken
+        over those. Rows outside the mask contribute nothing for a feedforward
+        policy; for a recurrent one they carry the after-effect of an earlier
+        perturbation, which is a different quantity and is left out.
+
+        `compute_robust_kl_penalty` returns the same number as a float and keeps
+        its signature. This method exists because a float carries no gradient,
+        and a penalty that cannot be differentiated does not regularise
+        anything -- it only moves the number that gets logged.
 
         Args:
-            states_clean: Clean state observations [batch_size, ...]
-            states_adv: Adversarial (perturbed) state observations [batch_size, ...]
+            states_clean: State observations [batch_size, ...]
+            states_adv: The same observations, perturbed [batch_size, ...]
             actions: Actions to evaluate [batch_size, ...]
-            lstm_states_clean: Clean LSTM states
-            lstm_states_adv: Adversarial LSTM states
-            episode_starts_clean: Clean episode starts
-            episode_starts_adv: Adversarial episode starts
+            lstm_states_clean: Recurrent state for the clean forward pass
+            lstm_states_adv: Recurrent state for the perturbed forward pass
+            episode_starts_clean: Episode starts for the clean forward pass
+            episode_starts_adv: Episode starts for the perturbed forward pass
+            sample_mask: Which rows are perturbed [batch_size] (0=clean, 1=adv)
 
         Returns:
-            Tuple of (robust_kl_penalty, info_dict)
+            Tuple of (robust_kl_penalty tensor, info_dict)
         """
         info = {}
+        zero = torch.zeros((), device=states_clean.device, dtype=states_clean.dtype)
 
         if not self.is_adversarial_enabled or self.config.robust_kl_coef <= 0:
-            return 0.0, info
+            return zero, info
 
         batch_size = states_clean.size(0)
         if batch_size == 0:
-            return 0.0, info
+            return zero, info
+
+        if states_adv.size(0) != batch_size:
+            raise ValueError(
+                "states_clean and states_adv must be the same rows in the same "
+                f"order, got {batch_size} and {states_adv.size(0)}. The robust "
+                "KL is defined between a state and its own perturbation; between "
+                "two different samples it is not a divergence of anything."
+            )
 
         # Get distributions from clean and adversarial states
         with torch.no_grad():
@@ -708,28 +794,24 @@ class StateAdversarialPPO:
 
         dist_adv = self._get_distribution(states_adv, lstm_states_adv, episode_starts_adv)
 
-        # Compute KL divergence: KL(clean || adversarial)
-        # Prefer analytical KL divergence for better accuracy and efficiency
-        kl_method = "unknown"
-        try:
-            # Analytical KL divergence (exact for Gaussian distributions)
-            # References:
-            # - PyTorch: torch.distributions.kl.kl_divergence
-            # - For Normal distributions: KL(π₁||π₂) = log(σ₂/σ₁) + (σ₁²+(μ₁-μ₂)²)/(2σ₂²) - 1/2
-            kl_div = torch.distributions.kl_divergence(dist_clean, dist_adv).mean()
-            kl_method = "analytical"
-        except NotImplementedError:
-            # Fallback: Monte Carlo approximation
-            # KL(π₁||π₂) ≈ E_π₁[log π₁(a) - log π₂(a)]
-            # Use actions sampled from clean distribution (from rollout buffer)
-            with torch.no_grad():
-                log_probs_clean = dist_clean.log_prob(actions)
+        kl_per_sample, kl_method = self._per_sample_kl(dist_clean, dist_adv, actions)
 
-            log_probs_adv = dist_adv.log_prob(actions)
-            kl_div = (log_probs_clean - log_probs_adv).mean()
-            kl_method = "monte_carlo"
+        if sample_mask is not None:
+            selected = sample_mask.reshape(-1) > 0.5
+            if selected.numel() != kl_per_sample.numel():
+                raise ValueError(
+                    f"sample_mask covers {selected.numel()} samples but the KL "
+                    f"has {kl_per_sample.numel()}"
+                )
+            if not bool(torch.any(selected)):
+                return zero, info
+            kl_div = kl_per_sample[selected].mean()
+            info["sa_ppo/num_adversarial_kl"] = float(int(selected.sum().item()))
+        else:
+            kl_div = kl_per_sample.mean()
 
-        robust_kl_penalty = float((self.config.robust_kl_coef * kl_div).item())
+        robust_kl_tensor = self.config.robust_kl_coef * kl_div
+        robust_kl_penalty = float(robust_kl_tensor.item())
         self._total_robust_kl_penalty += robust_kl_penalty
 
         info.update(
@@ -740,4 +822,48 @@ class StateAdversarialPPO:
             }
         )
 
-        return robust_kl_penalty, info
+        return robust_kl_tensor, info
+
+    def compute_robust_kl_penalty(
+        self,
+        states_clean: Tensor,
+        states_adv: Tensor,
+        actions: Tensor,
+        lstm_states_clean: Optional[Any] = None,
+        lstm_states_adv: Optional[Any] = None,
+        episode_starts_clean: Optional[Tensor] = None,
+        episode_starts_adv: Optional[Tensor] = None,
+        sample_mask: Optional[Tensor] = None,
+    ) -> Tuple[float, Dict[str, float]]:
+        """Compute robust KL regularization between clean and adversarial policies.
+
+        Uses analytical KL divergence when available (exact for Gaussian).
+
+        The value is the one from `compute_robust_kl_penalty_tensor`, read out as
+        a float. A float has no gradient, so a caller that adds this to a loss is
+        adding a constant; use the tensor form to actually regularise.
+
+        Args:
+            states_clean: Clean state observations [batch_size, ...]
+            states_adv: Adversarial (perturbed) state observations [batch_size, ...]
+            actions: Actions to evaluate [batch_size, ...]
+            lstm_states_clean: Clean LSTM states
+            lstm_states_adv: Adversarial LSTM states
+            episode_starts_clean: Clean episode starts
+            episode_starts_adv: Adversarial episode starts
+            sample_mask: Which rows are perturbed [batch_size] (0=clean, 1=adv)
+
+        Returns:
+            Tuple of (robust_kl_penalty, info_dict)
+        """
+        penalty, info = self.compute_robust_kl_penalty_tensor(
+            states_clean=states_clean,
+            states_adv=states_adv,
+            actions=actions,
+            lstm_states_clean=lstm_states_clean,
+            lstm_states_adv=lstm_states_adv,
+            episode_starts_clean=episode_starts_clean,
+            episode_starts_adv=episode_starts_adv,
+            sample_mask=sample_mask,
+        )
+        return float(penalty.item()), info

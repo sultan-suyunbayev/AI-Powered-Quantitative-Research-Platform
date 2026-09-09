@@ -189,12 +189,14 @@ class TestVGSv31Fix:
 
         state = vgs.state_dict()
 
-        # The mean-of-squares fix landed in 3.1; 3.2 added min_scaling_factor and
-        # variance_cap. load_state_dict accepts exactly these two, so keep this
-        # list in step with it.
+        # The mean-of-squares fix landed in 3.1; 3.2 added min_scaling_factor
+        # and variance_cap; 4.0 keeps the first moment per element so the
+        # reported variance is the temporal one. load_state_dict accepts all
+        # three, so keep this list in step with it.
         assert state["vgs_version"] in (
             "3.1",
             "3.2",
+            "4.0",
         ), f"VGS version should be one load_state_dict accepts, got {state['vgs_version']}"
 
         print(f"[OK] STATE_DICT VERSION: {state['vgs_version']}")
@@ -241,8 +243,14 @@ class TestVGSv31Fix:
         print(f"  Warning message includes E[g^2] fix explanation")
         print(f"  Statistics correctly reset to None")
 
-    def test_no_migration_warning_from_v3_1(self):
-        """REGRESSION TEST: Loading v3.1 checkpoint should NOT warn."""
+    def test_v3_1_checkpoint_migrates_with_a_warning(self):
+        """A 3.1 checkpoint loads, and says what it could not restore.
+
+        3.1 stores only the spatial mean per parameter. 4.0 needs the first
+        moment per element, so the load seeds every element with that scalar --
+        exact where the gradient is spatially uniform, approximate otherwise --
+        and warns rather than implying the load was lossless.
+        """
         param = torch.nn.Parameter(torch.randn(100))
         vgs = VarianceGradientScaler(parameters=[param])
 
@@ -269,15 +277,22 @@ class TestVGSv31Fix:
 
             # Should have NO warnings (or only unrelated ones)
             vgs_warnings = [warning for warning in w if "VGS" in str(warning.message)]
-            assert (
-                len(vgs_warnings) == 0
-            ), f"Should NOT warn when loading v3.1 checkpoint, got {len(vgs_warnings)} warnings"
+            assert len(vgs_warnings) == 1, (
+                "Loading a 3.1 checkpoint should say the elementwise moment was "
+                f"reconstructed, got {len(vgs_warnings)} warnings"
+            )
+            assert "4.0" in str(vgs_warnings[0].message)
 
         # Statistics should be preserved
         assert vgs._param_grad_mean_ema is not None, "Should preserve statistics"
         assert vgs._param_grad_sq_ema is not None, "Should preserve statistics"
 
-        print(f"[OK] NO MIGRATION WARNING for v3.1 -> v3.1")
+        # The statistics still arrive; only the elementwise moment is inferred.
+        assert vgs._param_grad_mean_ema is not None
+        assert vgs._param_grad_sq_ema is not None
+        assert vgs._param_grad_mean_elem_ema is not None
+
+        print("[OK] v3.1 -> v4.0 migration warns and keeps the statistics")
 
     def test_formula_correctness_mathematical(self):
         """MATHEMATICAL TEST: Verify Var[X] = E[X^2] - E[X]^2 formula."""
@@ -338,7 +353,7 @@ def test_all_vgs_v31_regression_tests():
     test_class.test_migration_warning_from_v3_0()
 
     print("\n6. Testing no migration warning for v3.1...")
-    test_class.test_no_migration_warning_from_v3_1()
+    test_class.test_v3_1_checkpoint_migrates_with_a_warning()
 
     print("\n7. Testing mathematical formula correctness...")
     test_class.test_formula_correctness_mathematical()

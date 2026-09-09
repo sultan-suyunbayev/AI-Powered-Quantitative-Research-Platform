@@ -509,7 +509,9 @@ class SQLiteBackend:
             con.execute("PRAGMA journal_mode=WAL;")
             self._ensure_schema(con)
             # nosemgrep: sql-injection-format-string -- TABLE is a class constant
-            cur = con.execute(f"SELECT * FROM {self.TABLE} WHERE id = 1")
+            cur = con.execute(
+                f"SELECT * FROM {self.TABLE} WHERE id = 1"  # nosec B608  # TABLE is a class constant
+            )
             row = cur.fetchone()
         finally:
             con.close()

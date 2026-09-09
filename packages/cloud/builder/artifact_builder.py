@@ -92,7 +92,12 @@ class BuildResult:
 
     success: bool = False
     manifest: Optional[ArtifactManifest] = None
+    #: The bundle directory: the artifact, its manifest and its SBOM.
     artifact_path: Optional[Path] = None
+    #: The artifact itself, inside that directory. artifact_digest is its
+    #: digest, and this is what ArtifactPublisher.publish() expects -- handing
+    #: it the directory instead fails on open().
+    artifact_file: Optional[Path] = None
     artifact_digest: str = ""
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
@@ -105,6 +110,7 @@ class BuildResult:
             "success": self.success,
             "manifest": self.manifest.to_dict() if self.manifest else None,
             "artifact_path": str(self.artifact_path) if self.artifact_path else None,
+            "artifact_file": str(self.artifact_file) if self.artifact_file else None,
             "artifact_digest": self.artifact_digest,
             "errors": self.errors,
             "warnings": self.warnings,
@@ -235,6 +241,7 @@ class ArtifactBuilder:
             # Always write manifest alongside artifact bundle
             self._write_manifest(output_dir, manifest)
             result.artifact_path = output_dir
+            result.artifact_file = artifact_file
 
             result.success = True
             result.manifest = manifest

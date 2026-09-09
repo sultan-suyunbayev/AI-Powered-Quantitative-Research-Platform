@@ -54,6 +54,11 @@ References:
 import torch
 from typing import Optional, Dict, Any, Iterable, List
 
+# float32 carries about seven decimal digits, so a difference smaller than this
+# fraction of its operands is rounding rather than signal. Used to keep
+# catastrophic cancellation in S - mean(M²) from being reported as variance.
+_FLOAT32_RELATIVE_PRECISION = 1e-6
+
 
 class VarianceGradientScaler:
     """
@@ -143,8 +148,14 @@ class VarianceGradientScaler:
         # - Stochastic variance computed as: Var[g] = E[s] - E[μ]²
         #
         # v3.0 BUG: Used E[(E[g])²] instead of E[g²], underestimated by factor of N!
-        self._param_grad_mean_ema: Optional[torch.Tensor] = None  # [num_params] - E[g]
-        self._param_grad_sq_ema: Optional[torch.Tensor] = None  # [num_params] - E[g²]
+        self._param_grad_mean_ema: Optional[torch.Tensor] = None  # [num_params] - E[mean(g)]
+        self._param_grad_sq_ema: Optional[torch.Tensor] = None  # [num_params] - E[mean(g²)]
+        # v4.0: the first moment, elementwise. mean_j(v_j) = S - mean_j(M_j²)
+        # needs E[g] per element; averaging before the EMA adds Var_spatial(m),
+        # a term that is not stochastic noise and does not vanish when the
+        # gradient is constant. The second moment stays scalar: the EMA is
+        # linear, so EMA[mean(g²)] already equals mean_j(E[g_j²]) exactly.
+        self._param_grad_mean_elem_ema: Optional[List[torch.Tensor]] = None
         self._param_numel: Optional[torch.Tensor] = None  # [num_params] - num elements per param
 
         # LEGACY v1.x: Global statistics (spatial variance - kept for backward compat logging)
@@ -171,6 +182,7 @@ class VarianceGradientScaler:
         # Reset per-parameter statistics when parameters change
         self._param_grad_mean_ema = None
         self._param_grad_sq_ema = None
+        self._param_grad_mean_elem_ema = None
         self._param_numel = None
 
     def _initialize_per_param_stats(self) -> None:
@@ -188,6 +200,10 @@ class VarianceGradientScaler:
         # Initialize EMA buffers
         self._param_grad_mean_ema = torch.zeros(num_params, device=device, dtype=torch.float32)
         self._param_grad_sq_ema = torch.zeros(num_params, device=device, dtype=torch.float32)
+        self._param_grad_mean_elem_ema = [
+            torch.zeros_like(p, dtype=torch.float32, memory_format=torch.preserve_format)
+            for p in self._parameters
+        ]
         self._param_numel = torch.tensor(
             [p.numel() for p in self._parameters], device=device, dtype=torch.float32
         )
@@ -267,6 +283,27 @@ class VarianceGradientScaler:
         }
 
     @torch.no_grad()
+    def _mean_squared_elementwise_mean(self, bias_correction: float) -> Optional[torch.Tensor]:
+        """Return mean_j(M_j²) per parameter, bias-corrected.
+
+        This is the term that turns the reported statistic from
+        ``mean_j(v_j) + Var_spatial(m)`` into ``mean_j(v_j)``: squaring each
+        element's temporal mean before averaging, rather than averaging first
+        and squaring the result. The two agree only when every element shares
+        the same temporal mean.
+        """
+        if not self._param_grad_mean_elem_ema:
+            return None
+        # float64: this feeds a subtraction from a nearly equal quantity, and
+        # in float32 the difference is all rounding residue.
+        values = [
+            (elem.to(torch.float64) / bias_correction).pow(2).mean()
+            for elem in self._param_grad_mean_elem_ema
+        ]
+        if not values:
+            return None
+        return torch.stack(values)
+
     def update_statistics(self) -> None:
         """Update per-parameter stochastic variance statistics.
 
@@ -309,6 +346,15 @@ class VarianceGradientScaler:
             self._param_grad_sq_ema[i] = (
                 self.beta * self._param_grad_sq_ema[i] + (1 - self.beta) * grad_sq_current
             )
+
+            # v4.0: the same EMA, elementwise. mean_j(M_j²) is the term that
+            # separates temporal noise from spatial spread.
+            if self._param_grad_mean_elem_ema is not None:
+                elem = self._param_grad_mean_elem_ema[i]
+                if elem.shape != grad.shape or elem.device != grad.device:
+                    elem = torch.zeros_like(grad, dtype=torch.float32)
+                    self._param_grad_mean_elem_ema[i] = elem
+                elem.mul_(self.beta).add_(grad.to(torch.float32), alpha=1 - self.beta)
 
         # LEGACY: Update global statistics for backward compat logging
         # These are now SPATIAL variance (deprecated) and used only for logging
@@ -380,10 +426,25 @@ class VarianceGradientScaler:
         mean_corrected = self._param_grad_mean_ema / bias_correction  # E[μ]
         sq_corrected = self._param_grad_sq_ema / bias_correction  # E[s]
 
-        # CRITICAL FIX (v3.1): Compute stochastic variance as Var[g] = E[s] - E[μ]²
-        # where E[s] = E[mean(g²)], NOT E[(mean(g))²] as in v3.0!
-        # This measures variance OVER TIME with spatial averaging (like Adam)
-        variance = sq_corrected - mean_corrected.pow(2)
+        # v4.0: mean_j(v_j) = S - mean_j(M_j²).
+        # Squaring each element's temporal mean *before* averaging is what
+        # separates stochastic noise from spatial spread: averaging first and
+        # then squaring leaves Var_spatial(m) in the result, which does not go
+        # to zero when the gradient stops varying in time. Falls back to the
+        # v3.1 form only when the elementwise EMA is unavailable (a migrated
+        # checkpoint before its first update).
+        mean_sq_elem = self._mean_squared_elementwise_mean(bias_correction)
+        if mean_sq_elem is not None and mean_sq_elem.numel() == sq_corrected.numel():
+            sq64 = sq_corrected.to(torch.float64)
+            variance = (sq64 - mean_sq_elem).to(sq_corrected.dtype)
+            # The operands are accumulated in float32, so a gap below their
+            # relative precision is rounding, not variance. Without this floor a
+            # gradient that never changes reports ~1e-7, which the |E[g]|²
+            # denominator turns into 1e5 whenever the gradient is centred.
+            residue = _FLOAT32_RELATIVE_PRECISION * sq_corrected.abs()
+            variance = torch.where(variance.abs() <= residue, torch.zeros_like(variance), variance)
+        else:
+            variance = sq_corrected - mean_corrected.pow(2)
 
         # Numerical stability: variance can be slightly negative due to floating point errors
         variance = torch.clamp(variance, min=0.0)
@@ -505,9 +566,20 @@ class VarianceGradientScaler:
             # v3.0 FIXED semantics:
             # - _param_grad_mean_ema stores E[g] (gradient mean over time)
             # - _param_grad_sq_ema stores E[g²] (squared gradient mean over time)
-            mean_corrected = self._param_grad_mean_ema / bias_correction  # E[g]
-            sq_corrected = self._param_grad_sq_ema / bias_correction  # E[g²]
-            variance = sq_corrected - mean_corrected.pow(2)  # Var[g] = E[g²] - E[g]²
+            mean_corrected = self._param_grad_mean_ema / bias_correction  # E[mean(g)]
+            sq_corrected = self._param_grad_sq_ema / bias_correction  # E[mean(g²)]
+            # v4.0: same correction as get_normalized_variance -- mean_j(M_j²),
+            # not (mean_j M_j)². See _mean_squared_elementwise_mean.
+            mean_sq_elem = self._mean_squared_elementwise_mean(bias_correction)
+            if mean_sq_elem is not None and mean_sq_elem.numel() == sq_corrected.numel():
+                sq64 = sq_corrected.to(torch.float64)
+                variance = (sq64 - mean_sq_elem).to(sq_corrected.dtype)
+                residue = _FLOAT32_RELATIVE_PRECISION * sq_corrected.abs()
+                variance = torch.where(
+                    variance.abs() <= residue, torch.zeros_like(variance), variance
+                )
+            else:
+                variance = sq_corrected - mean_corrected.pow(2)
             variance = torch.clamp(variance, min=0.0)  # Numerical stability
             denominator = torch.clamp(mean_corrected.abs().pow(2), min=1e-12) + self.eps
             normalized_var_per_param = variance / denominator
@@ -558,6 +630,7 @@ class VarianceGradientScaler:
         # Reset per-parameter stochastic variance statistics
         self._param_grad_mean_ema = None
         self._param_grad_sq_ema = None
+        self._param_grad_mean_elem_ema = None
         self._param_numel = None
 
         # Reset global spatial variance statistics (legacy)
@@ -616,8 +689,12 @@ class VarianceGradientScaler:
             # v3.1 FIXED: Per-parameter stochastic variance statistics
             # Stores E[μ] and E[s] for computing Var[g] = E[s] - E[μ]²
             # where μ_t = mean(g_t), s_t = mean(g_t²)
-            "param_grad_mean_ema": self._param_grad_mean_ema,  # E[μ]
-            "param_grad_sq_ema": self._param_grad_sq_ema,  # E[s] - FIXED v3.1!
+            "param_grad_mean_ema": self._param_grad_mean_ema,  # E[mean(g)]
+            "param_grad_sq_ema": self._param_grad_sq_ema,  # E[mean(g²)]
+            # v4.0: E[g] per element. mean_j(M_j²) is what makes the reported
+            # variance the temporal one; without it the statistic carries
+            # Var_spatial(m) as a constant offset.
+            "param_grad_mean_elem_ema": self._param_grad_mean_elem_ema,
             "param_numel": self._param_numel,
             # LEGACY v1.x: Global spatial variance statistics (for logging only)
             "grad_mean_ema": self._grad_mean_ema,
@@ -625,7 +702,7 @@ class VarianceGradientScaler:
             "grad_norm_ema": self._grad_norm_ema,
             "grad_max_ema": self._grad_max_ema,
             # Version marker for migration
-            "vgs_version": "3.2",  # v3.2: Added min_scaling_factor and variance_cap
+            "vgs_version": "4.0",  # v3.2: Added min_scaling_factor and variance_cap
         }
 
         return state
@@ -651,8 +728,26 @@ class VarianceGradientScaler:
         # Check version
         vgs_version = state_dict.get("vgs_version", "1.0")
 
-        # v3.2 is compatible with v3.1 (same statistics format, just adds new parameters)
-        if vgs_version not in ("3.1", "3.2"):
+        # v4.0 adds the elementwise first moment. 3.1/3.2 checkpoints load, with
+        # that moment reconstructed from the scalar they do carry.
+        if vgs_version in ("3.1", "3.2"):
+            import warnings
+
+            warnings.warn(
+                f"VGS checkpoint is version {vgs_version}; this build writes 4.0. "
+                "4.0 keeps the gradient's first moment per element, because "
+                "mean_j(v_j) = S - mean_j(M_j²): averaging the elements before "
+                "squaring leaves Var_spatial(m) in the reported variance, and "
+                "that term does not vanish when the gradient stops varying in "
+                "time. A 3.x checkpoint has only the spatial mean, so each "
+                "element is seeded with it -- exact where the gradient is "
+                "spatially uniform, approximate otherwise. The statistic "
+                "re-converges over roughly 1/(1-beta) updates.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        if vgs_version not in ("3.1", "3.2", "4.0"):
             # OLD FORMAT (v1.x-v3.0 with INCORRECT E[(E[g])²] instead of E[g²])
             import warnings
 
@@ -692,6 +787,7 @@ class VarianceGradientScaler:
             # Reset per-parameter statistics (will be reinitialized with CORRECT computation)
             self._param_grad_mean_ema = None
             self._param_grad_sq_ema = None
+            self._param_grad_mean_elem_ema = None
             self._param_numel = None
 
             # Load legacy global statistics if available (for logging)
@@ -703,11 +799,29 @@ class VarianceGradientScaler:
         else:
             # NEW FORMAT (v3.1 with CORRECT E[g²] = mean of squares)
             # Load per-parameter statistics
-            self._param_grad_mean_ema = state_dict.get("param_grad_mean_ema", None)  # E[μ]
-            self._param_grad_sq_ema = state_dict.get(
-                "param_grad_sq_ema", None
-            )  # E[s] where s=mean(g²)
+            self._param_grad_mean_ema = state_dict.get("param_grad_mean_ema", None)  # E[mean(g)]
+            self._param_grad_sq_ema = state_dict.get("param_grad_sq_ema", None)  # E[mean(g²)]
             self._param_numel = state_dict.get("param_numel", None)
+
+            # v4.0: E[g] per element. A 3.1/3.2 checkpoint does not carry it --
+            # seed each element with the scalar mean it does carry, which is
+            # exact where the gradient is spatially uniform and re-converges
+            # over the EMA horizon otherwise. The warning above says as much.
+            elem = state_dict.get("param_grad_mean_elem_ema", None)
+            if elem is not None:
+                self._param_grad_mean_elem_ema = list(elem)
+            elif self._parameters and self._param_grad_mean_ema is not None:
+                scalars = self._param_grad_mean_ema
+                self._param_grad_mean_elem_ema = [
+                    torch.full_like(
+                        p,
+                        float(scalars[i]) if i < len(scalars) else 0.0,
+                        dtype=torch.float32,
+                    )
+                    for i, p in enumerate(self._parameters)
+                ]
+            else:
+                self._param_grad_mean_elem_ema = None
             # param_ids will be rebuilt by _initialize_per_param_stats if needed
 
             # Load legacy global statistics (for logging)

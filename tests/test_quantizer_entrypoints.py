@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import logging
 import sys
 from types import ModuleType, SimpleNamespace
@@ -133,6 +134,7 @@ def test_quantizer_warnings_are_logged(monkeypatch, caplog, tmp_path):
     assert any("refresh recommended soon" in record.message for record in caplog.records)
 
 
+@pytest.mark.uses_filters_refresh  # this test is about the refresh; it stubs subprocess.run itself
 def test_quantizer_refresh_is_debounced(monkeypatch, tmp_path):
     import impl_quantizer
 

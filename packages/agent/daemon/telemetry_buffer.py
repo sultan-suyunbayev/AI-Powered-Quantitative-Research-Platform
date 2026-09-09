@@ -521,7 +521,7 @@ class TelemetryBuffer:
                         UPDATE telemetry_events
                         SET sent = 1, sent_at = ?
                         WHERE id IN ({placeholders})
-                    """,
+                    """,  # nosec B608  # '?' placeholders, ids bound
                         [datetime.utcnow().isoformat()] + event_ids,
                     )
                     conn.commit()
@@ -534,7 +534,7 @@ class TelemetryBuffer:
                         UPDATE telemetry_events
                         SET retry_count = retry_count + 1
                         WHERE id IN ({placeholders})
-                    """,
+                    """,  # nosec B608  # '?' placeholders, ids bound
                         event_ids,
                     )
                     conn.commit()
@@ -547,7 +547,7 @@ class TelemetryBuffer:
                     UPDATE telemetry_events
                     SET retry_count = retry_count + 1
                     WHERE id IN ({placeholders})
-                """,
+                """,  # nosec B608  # '?' placeholders, ids bound
                     event_ids,
                 )
                 conn.commit()
