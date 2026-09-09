@@ -1137,8 +1137,9 @@ class LazyMultiSeriesLOBManager:
             if self._enable_compression:
                 data = gzip.decompress(data)
 
-            # Deserialize (safe - HMAC verified)
-            state_dict = pickle.loads(data)
+            # Deserialize. The HMAC over this file was verified above, before
+            # anything was decompressed, so the bytes are ones this process wrote.
+            state_dict = pickle.loads(data)  # nosec B301
 
             # Reconstruct OrderBook
             order_book = OrderBook(symbol=key)

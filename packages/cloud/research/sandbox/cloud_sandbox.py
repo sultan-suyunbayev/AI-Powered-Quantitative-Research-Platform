@@ -882,7 +882,8 @@ if __name__ == "__main__":
         # Read-only filesystem
         if self.config.readonly_rootfs:
             cmd.extend(["--read-only"])
-            cmd.extend(["--tmpfs", "/tmp:size=64m,mode=1777"])
+            # A tmpfs mount inside the container, not a path on this host.
+            cmd.extend(["--tmpfs", "/tmp:size=64m,mode=1777"])  # nosec B108
 
         # Drop capabilities
         if self.config.drop_capabilities:

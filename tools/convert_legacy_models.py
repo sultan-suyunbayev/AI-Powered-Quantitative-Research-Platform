@@ -92,7 +92,9 @@ def convert_model(path: Path, backup: bool = True, dry_run: bool = False) -> Tup
     # models. This risk is documented and controlled per docs/security/THREAT_MODEL_MODEL_LOADING.md
     # Controls: C3 (conversion utility), backup creation, immediate re-save as secure format
     try:
-        model = torch.load(path, map_location="cpu", weights_only=False)
+        # This tool exists to read exactly these files and write them back in
+        # the secure format; see the note above.
+        model = torch.load(path, map_location="cpu", weights_only=False)  # nosec B614
     except Exception as e:
         return False, f"Failed to load model: {e}"
 

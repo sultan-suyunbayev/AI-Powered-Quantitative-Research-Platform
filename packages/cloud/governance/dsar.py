@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -279,7 +280,10 @@ class DSARService:
         """
         self._data_fetcher = data_fetcher
         self._data_deleter = data_deleter
-        self._export_dir = export_dir or Path("/tmp/dsar_exports")
+        # Subject-access exports land here. "/tmp" is not a path on Windows and
+        # is a predictable name on a shared host; the platform temp directory
+        # honours TMPDIR/TEMP.
+        self._export_dir = export_dir or Path(tempfile.gettempdir()) / "dsar_exports"
         self._requests: Dict[str, DSARRequest] = {}
         self._audit_log: List[Dict[str, Any]] = []
         self._lock = threading.Lock()

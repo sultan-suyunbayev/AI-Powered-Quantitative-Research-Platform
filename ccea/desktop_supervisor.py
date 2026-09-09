@@ -63,7 +63,9 @@ def _wait_http(url: str, timeout: float = 60.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            with urlopen(url, timeout=3) as r:  # noqa: S310 - loopback only
+            # The only caller builds this from the control-plane URL the
+            # supervisor itself just started on loopback.
+            with urlopen(url, timeout=3) as r:  # noqa: S310  # nosec B310
                 if 200 <= r.status < 500:
                     return True
         except Exception:

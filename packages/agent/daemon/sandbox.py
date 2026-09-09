@@ -563,7 +563,8 @@ class Sandbox:
         if self.config.readonly_fs:
             cmd.append("--read-only")
             # Add tmpfs for writable directories
-            cmd.extend(["--tmpfs", "/tmp:size=64m"])
+            # A tmpfs mount inside the container, not a path on this host.
+            cmd.extend(["--tmpfs", "/tmp:size=64m"])  # nosec B108
 
         # Volume mounts
         for host_path, container_path in self.config.docker_volumes.items():

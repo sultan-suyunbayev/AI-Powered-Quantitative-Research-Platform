@@ -32,6 +32,7 @@ import json
 import logging
 import os
 import sqlite3
+import re
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -77,6 +78,25 @@ def _epoch_ns(moment: datetime) -> int:
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     return int(moment.timestamp() * 1e9)
+
+
+_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_sql_identifier(name: str, what: str) -> str:
+    """Check that ``name`` is a bare SQL identifier before it is interpolated.
+
+    SQL binds values, never identifiers, so a configurable table name has to be
+    pasted into the statement text. That is only safe if it cannot be anything
+    but a name -- so it is checked once, where it enters, instead of being
+    trusted at each of the statements that use it.
+    """
+    if not isinstance(name, str) or not _SQL_IDENTIFIER_RE.match(name):
+        raise ValueError(
+            f"{what} must be a bare SQL identifier (letters, digits and "
+            f"underscores, not starting with a digit); got {name!r}"
+        )
+    return name
 
 
 class StorageBackendType(Enum):
@@ -648,7 +668,11 @@ class SQLiteAuditStorage(AuditStorageBackend):
         """Initialize SQLite storage."""
         self.config = config or AuditStorageConfig(backend_type=StorageBackendType.SQLITE)
         self._db_path = self.config.database_path
-        self._table_name = self.config.table_name
+        # SQL cannot bind an identifier, so the table name is interpolated into
+        # every statement below. That is only safe if it *is* an identifier, and
+        # it arrives from configuration -- so it is checked once, here, rather
+        # than trusted eight times further down.
+        self._table_name = _validate_sql_identifier(self.config.table_name, "table_name")
         self._lock = threading.RLock()  # Reentrant lock for nested calls
         self._metrics = StorageMetrics()
         self._state = StorageState.UNINITIALIZED
@@ -767,7 +791,7 @@ class SQLiteAuditStorage(AuditStorageBackend):
                 f"""
                 SELECT record_hash FROM {self._table_name}
                 ORDER BY id DESC LIMIT 1
-            """
+            """  # nosec B608  # table name validated as an identifier in __init__
             )
             row = cursor.fetchone()
             self._last_hash = row["record_hash"] if row else None
@@ -809,7 +833,7 @@ class SQLiteAuditStorage(AuditStorageBackend):
                         sequence_number, priority, status,
                         previous_record_hash, record_hash
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
+                    """,  # nosec B608  # table name validated as an identifier in __init__
                     (
                         record.record_id,
                         record.event_type.value,
@@ -893,7 +917,7 @@ class SQLiteAuditStorage(AuditStorageBackend):
                                 sequence_number, priority, status,
                                 previous_record_hash, record_hash
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
+                            """,  # nosec B608  # table name validated as an identifier in __init__
                             (
                                 record.record_id,
                                 record.event_type.value,
@@ -990,7 +1014,7 @@ class SQLiteAuditStorage(AuditStorageBackend):
         try:
             cursor = conn.cursor()
             cursor.execute(
-                f"SELECT * FROM {self._table_name} WHERE record_id = ?",
+                f"SELECT * FROM {self._table_name} WHERE record_id = ?",  # nosec B608  # table name validated as an identifier in __init__
                 (record_id,),
             )
             row = cursor.fetchone()
@@ -1053,7 +1077,12 @@ class SQLiteAuditStorage(AuditStorageBackend):
                     ORDER BY event_timestamp_ns ASC
                     LIMIT ? OFFSET ?
                 """
-                params = [start_ns, end_ns, limit, offset]
+                params = [
+                    start_ns,
+                    end_ns,
+                    limit,
+                    offset,
+                ]
 
             cursor.execute(query, params)
             rows = cursor.fetchall()
@@ -1082,7 +1111,7 @@ class SQLiteAuditStorage(AuditStorageBackend):
                 SELECT * FROM {self._table_name}
                 WHERE order_id = ?
                 ORDER BY event_timestamp_ns ASC
-                """,
+                """,  # nosec B608  # table name validated as an identifier in __init__
                 (order_id,),
             )
             rows = cursor.fetchall()
@@ -1120,7 +1149,7 @@ class SQLiteAuditStorage(AuditStorageBackend):
                     WHERE algorithm_id = ?
                     AND event_timestamp_ns BETWEEN ? AND ?
                     ORDER BY event_timestamp_ns ASC
-                    """,
+                    """,  # nosec B608  # table name validated as an identifier in __init__
                     (algorithm_id, start_ns, end_ns),
                 )
             else:
@@ -1129,7 +1158,7 @@ class SQLiteAuditStorage(AuditStorageBackend):
                     SELECT * FROM {self._table_name}
                     WHERE algorithm_id = ?
                     ORDER BY event_timestamp_ns ASC
-                    """,
+                    """,  # nosec B608  # table name validated as an identifier in __init__
                     (algorithm_id,),
                 )
 
@@ -1196,7 +1225,9 @@ class SQLiteAuditStorage(AuditStorageBackend):
         try:
             cursor = conn.cursor()
             # nosemgrep: sql-injection-format-string -- table identifier, not bindable
-            cursor.execute(f"SELECT * FROM {self._table_name} ORDER BY id DESC LIMIT 1")
+            cursor.execute(
+                f"SELECT * FROM {self._table_name} ORDER BY id DESC LIMIT 1"  # nosec B608  # identifier validated in __init__
+            )  # nosec B608  # table name validated as an identifier in __init__
             row = cursor.fetchone()
             return self._row_to_record(row) if row else None
         except Exception as e:

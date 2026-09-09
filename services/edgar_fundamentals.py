@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import time
+import urllib.parse
 import urllib.request
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
@@ -75,10 +76,15 @@ def _http_json(url: str, *, ua: str = DEFAULT_UA, timeout: float = 20.0, retries
     last = None
     for i in range(retries):
         try:
+            # The base URL is configurable; urllib treats file:// as a fetch.
+            if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+                raise ValueError(f"refusing to fetch a non-HTTP URL: {url!r}")
             req = urllib.request.Request(
                 url, headers={"User-Agent": ua, "Accept-Encoding": "gzip, deflate"}
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(
+                req, timeout=timeout
+            ) as resp:  # nosec B310  # scheme checked above
                 raw = resp.read()
                 enc = resp.headers.get("Content-Encoding", "")
                 if "gzip" in enc:

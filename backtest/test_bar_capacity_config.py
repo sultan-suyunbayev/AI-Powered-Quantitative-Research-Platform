@@ -38,7 +38,7 @@ class _RecordingSim:
 
 
 def test_finalise_bar_capacity_payload_with_fallbacks() -> None:
-    adv_store = _StubAdvStore(path="/tmp/adv.csv")
+    adv_store = _StubAdvStore(path="/tmp/adv.csv")  # nosec B108  # a stub path, never opened
     payload, fallbacks, missing = _finalise_bar_capacity_payload(
         {"enabled": True},
         adv_store=adv_store,
@@ -49,9 +49,12 @@ def test_finalise_bar_capacity_payload_with_fallbacks() -> None:
         "enabled": True,
         "adv_base_path": "/tmp/adv.csv",
         "timeframe_ms": 15_000,
-    }
+    }  # nosec B108  # a stub path, never opened
     assert fallbacks == [
-        ("adv_base_path", "/tmp/adv.csv"),
+        (
+            "adv_base_path",
+            "/tmp/adv.csv",
+        ),  # nosec B108  # a stub path, never opened
         ("timeframe_ms", 15_000),
     ]
     assert missing == []
@@ -73,7 +76,7 @@ def test_apply_bar_capacity_base_config_calls_setter_and_logs(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     sim = _RecordingSim()
-    adv_store = _StubAdvStore(path="/tmp/adv.csv")
+    adv_store = _StubAdvStore(path="/tmp/adv.csv")  # nosec B108  # a stub path, never opened
     caplog.set_level("WARNING")
 
     _apply_bar_capacity_base_config(
@@ -89,7 +92,7 @@ def test_apply_bar_capacity_base_config_calls_setter_and_logs(
             "enabled": True,
             "adv_base_path": "/tmp/adv.csv",
             "timeframe_ms": 60_000,
-        }
+        }  # nosec B108  # a stub path, never opened
     ]
     warning_messages = [rec.getMessage() for rec in caplog.records]
     assert any("falling back to ADV dataset" in msg for msg in warning_messages)
@@ -134,7 +137,7 @@ def test_apply_bar_capacity_base_config_bypasses_when_unavailable(
     _apply_bar_capacity_base_config(
         sim,
         {"enabled": True},
-        adv_store=_StubAdvStore(path="/tmp/adv.csv"),
+        adv_store=_StubAdvStore(path="/tmp/adv.csv"),  # nosec B108  # a stub path, never opened
         default_timeframe_ms=1_000,
         context="simctx",
     )

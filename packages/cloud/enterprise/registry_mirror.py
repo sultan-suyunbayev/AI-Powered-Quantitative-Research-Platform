@@ -134,7 +134,9 @@ class RegistryMirrorConfig:
 
     # Local registry
     local_port: int = 5001
-    local_host: str = "0.0.0.0"
+    # The mirror is a server: the default is every interface, and a deployment
+    # that wants one narrows it here.
+    local_host: str = "0.0.0.0"  # nosec B104
 
     # Sync settings
     sync_interval_seconds: int = DEFAULT_SYNC_INTERVAL

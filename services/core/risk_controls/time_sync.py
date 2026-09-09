@@ -344,8 +344,14 @@ class ComplianceClock:
             for url in urls:
                 try:
                     start = time.time()
+                    # These come from configuration; urllib would happily open
+                    # file:// or ftp:// and call the result a clock reading.
+                    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+                        continue
                     request = urllib.request.Request(url, method="HEAD")
-                    with urllib.request.urlopen(request, timeout=5) as response:
+                    with urllib.request.urlopen(
+                        request, timeout=5
+                    ) as response:  # nosec B310  # scheme checked above
                         rtt = time.time() - start
                         date_str = response.headers.get("Date")
                         if date_str:
