@@ -73,7 +73,9 @@ def test_preflight_accepts_manifest_embedded_signature(tmp_path):
         )
     )
     result = checker.run_preflight(
-        artifact_path=out_dir / "artifact.zip",
+        # The bundle directory is build.artifact_path; the file inside it, the
+        # one the digest is over, is build.artifact_file.
+        artifact_path=build.artifact_file,
         artifact_digest=manifest["artifact_digest"],
         manifest=manifest,
         signature=None,
