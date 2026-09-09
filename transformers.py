@@ -1178,13 +1178,33 @@ class OnlineFeatureTransformer:
             return ema
 
         # 2. MACD
+        #
+        # This used to call _calc_ema twice for every prefix of `seq`, each call
+        # starting again from the first element: Theta(n**2) per bar and
+        # Theta(n**3) over a run, recomputing on every bar the same numbers the
+        # bar before had already produced. `seq` is as long as the longest
+        # configured window -- 10 080 bars for the default CVD windows -- so
+        # that is on the order of 200 million float operations per update.
+        #
+        # An EMA is a recursion, so the whole series comes out in one pass:
+        # seed each average the way _calc_ema seeds it, with the mean of its
+        # first n values, then fold in one price at a time. Same operations in
+        # the same order, so the same floats down to the last bit.
         macd_list = []
-        for length in range(26, len(seq) + 1):
-            sub_seq = seq[:length]
-            e12 = _calc_ema(sub_seq, 12)
-            e26 = _calc_ema(sub_seq, 26)
-            if e12 is not None and e26 is not None:
-                macd_list.append(e12 - e26)
+        if len(seq) >= 26:
+            multiplier_12 = 2.0 / 13.0
+            multiplier_26 = 2.0 / 27.0
+
+            ema_12 = sum(seq[:12]) / 12.0
+            for price in seq[12:26]:
+                ema_12 = (price - ema_12) * multiplier_12 + ema_12
+            ema_26 = sum(seq[:26]) / 26.0
+            macd_list.append(ema_12 - ema_26)
+
+            for price in seq[26:]:
+                ema_12 = (price - ema_12) * multiplier_12 + ema_12
+                ema_26 = (price - ema_26) * multiplier_26 + ema_26
+                macd_list.append(ema_12 - ema_26)
 
         if len(macd_list) >= 9:
             macd_sig = _calc_ema(macd_list, 9)
@@ -1657,6 +1677,16 @@ class OnlineFeatureTransformer:
         # GARCH(1,1) -> EWMA -> Historical Volatility
         if self.spec.garch_windows:
             price_list = list(st["prices"])
+            n_prices = len(price_list)
+            # calculate_garch_volatility fits on prices[-min(n, len(prices)):],
+            # and only takes the GARCH branch at all when n >= 50. So two windows
+            # agree on the answer exactly when they agree on that pair -- which
+            # every window longer than the history in hand does. That is not an
+            # edge case: with the default windows (12000, 20160 and 43200 bars on
+            # minute data) a run is in warm-up for its first month, refitting the
+            # same maximum-likelihood model three times a bar. Fit it once per
+            # distinct effective window; the numbers are unchanged.
+            garch_by_window: Dict[int, Optional[float]] = {}
             # CRITICAL FIX #1: Используем исходные значения в минутах для именования, бары для индексирования
             for i, window in enumerate(self.spec.garch_windows):
                 # Создаем имя признака с поддержкой дней, часов и минут
@@ -1669,7 +1699,12 @@ class OnlineFeatureTransformer:
                 # 2. Fallback на EWMA если недостаточно данных или GARCH не сходится
                 # 3. Fallback на Historical Volatility для минимальных данных (2+ бара)
                 # Возвращает None только если < 2 баров
-                garch_vol = calculate_garch_volatility(price_list, window)
+                cache_key = min(window, n_prices) if window >= 50 else 0
+                if cache_key in garch_by_window:
+                    garch_vol = garch_by_window[cache_key]
+                else:
+                    garch_vol = calculate_garch_volatility(price_list, window)
+                    garch_by_window[cache_key] = garch_vol
                 if garch_vol is not None:
                     feats[feature_name] = float(garch_vol)
                 else:

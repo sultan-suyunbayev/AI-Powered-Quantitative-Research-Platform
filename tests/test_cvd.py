@@ -11,11 +11,21 @@ def test_cvd_online():
     """Тест онлайн вычисления CVD."""
     print("Тест 1: Онлайн вычисление CVD")
 
+    # Every assertion in this file is about cvd_*. Left unset, FeatureSpec
+    # fills in its defaults -- among them garch_windows=[12000, 20160, 43200]
+    # minutes, three conditional-volatility models refitted by maximum
+    # likelihood on every bar. Naming the families explicitly keeps this a CVD
+    # test; the volatility estimators have their own.
     spec = FeatureSpec(
         lookbacks_prices=[240, 720],  # 4h, 12h для 4h таймфрейма
         rsi_period=14,
         cvd_windows=[5, 10],  # Малые окна для теста (в минутах)
         bar_duration_minutes=1,  # Используем минутные данные для теста
+        yang_zhang_windows=[],
+        parkinson_windows=[],
+        garch_windows=[],
+        taker_buy_ratio_windows=[],
+        taker_buy_ratio_momentum=[],
     )
 
     transformer = OnlineFeatureTransformer(spec)
@@ -93,11 +103,21 @@ def test_cvd_offline():
     }
     df = pd.DataFrame(data)
 
+    # Every assertion in this file is about cvd_*. Left unset, FeatureSpec
+    # fills in its defaults -- among them garch_windows=[12000, 20160, 43200]
+    # minutes, three conditional-volatility models refitted by maximum
+    # likelihood on every bar. Naming the families explicitly keeps this a CVD
+    # test; the volatility estimators have their own.
     spec = FeatureSpec(
         lookbacks_prices=[240, 720],  # 4h, 12h для 4h таймфрейма
         rsi_period=14,
         cvd_windows=[1440, 10080],  # 24ч, 7д (в минутах)
         bar_duration_minutes=1,  # Минутные данные в тесте
+        yang_zhang_windows=[],
+        parkinson_windows=[],
+        garch_windows=[],
+        taker_buy_ratio_windows=[],
+        taker_buy_ratio_momentum=[],
     )
 
     result = apply_offline_features(
@@ -140,11 +160,21 @@ def test_cvd_edge_cases():
     """Тест граничных случаев для CVD."""
     print("Тест 3: Граничные случаи CVD")
 
+    # Every assertion in this file is about cvd_*. Left unset, FeatureSpec
+    # fills in its defaults -- among them garch_windows=[12000, 20160, 43200]
+    # minutes, three conditional-volatility models refitted by maximum
+    # likelihood on every bar. Naming the families explicitly keeps this a CVD
+    # test; the volatility estimators have their own.
     spec = FeatureSpec(
         lookbacks_prices=[240],  # 4h для 4h таймфрейма
         rsi_period=14,
         cvd_windows=[5],  # Малое окно для теста (5 минут)
         bar_duration_minutes=1,  # Используем минутные данные для теста
+        yang_zhang_windows=[],
+        parkinson_windows=[],
+        garch_windows=[],
+        taker_buy_ratio_windows=[],
+        taker_buy_ratio_momentum=[],
     )
 
     transformer = OnlineFeatureTransformer(spec)
