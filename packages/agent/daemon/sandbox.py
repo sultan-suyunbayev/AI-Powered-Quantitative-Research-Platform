@@ -54,6 +54,7 @@ DEFAULT_TIMEOUT_SECONDS: Final[int] = 3600  # 1 hour
 
 class SandboxType(Enum):
     """Types of sandbox isolation."""
+
     PROCESS = auto()  # Separate process with resource limits
     CONTAINER = auto()  # Docker container
     NONE = auto()  # No isolation (for development)
@@ -61,6 +62,7 @@ class SandboxType(Enum):
 
 class SandboxState(Enum):
     """Sandbox state."""
+
     CREATED = auto()
     STARTING = auto()
     RUNNING = auto()
@@ -74,6 +76,7 @@ class SandboxConfig:
     """
     Sandbox configuration.
     """
+
     # Sandbox type
     sandbox_type: SandboxType = SandboxType.PROCESS
 
@@ -117,6 +120,7 @@ class SandboxMetrics:
     """
     Sandbox resource metrics.
     """
+
     sandbox_id: str = ""
     timestamp: datetime = field(default_factory=datetime.utcnow)
     cpu_percent: float = 0.0
@@ -143,6 +147,7 @@ class SandboxResult:
     """
     Result from sandbox execution.
     """
+
     sandbox_id: str = ""
     success: bool = False
     exit_code: int = 0
@@ -332,7 +337,9 @@ class Sandbox:
 
         timeout = timeout or self.config.timeout_seconds
         result = SandboxResult(sandbox_id=self._sandbox_id)
-        start_time = time.time()
+        # perf_counter, not time(): the wall clock can step, and on Windows it
+        # advances in ~16 ms jumps, so a quick call measures as exactly 0.0.
+        start_time = time.perf_counter()
 
         try:
             # Create communication queues
@@ -370,7 +377,7 @@ class Sandbox:
             result.error = str(e)
             result.success = False
 
-        result.duration_seconds = time.time() - start_time
+        result.duration_seconds = time.perf_counter() - start_time
         return result
 
     def _execute_direct(
@@ -382,7 +389,9 @@ class Sandbox:
     ) -> SandboxResult:
         """Execute without isolation."""
         result = SandboxResult(sandbox_id=self._sandbox_id)
-        start_time = time.time()
+        # perf_counter, not time(): the wall clock can step, and on Windows it
+        # advances in ~16 ms jumps, so a quick call measures as exactly 0.0.
+        start_time = time.perf_counter()
 
         try:
             output = func(*args, **(kwargs or {}))
@@ -392,7 +401,7 @@ class Sandbox:
             result.success = False
             result.error = str(e)
 
-        result.duration_seconds = time.time() - start_time
+        result.duration_seconds = time.perf_counter() - start_time
         return result
 
     @staticmethod
@@ -464,7 +473,9 @@ class Sandbox:
             _resource_module.setrlimit(_resource_module.RLIMIT_AS, (memory_bytes, memory_bytes))
 
             # CPU time limit
-            _resource_module.setrlimit(_resource_module.RLIMIT_CPU, (cpu_time_seconds, cpu_time_seconds))
+            _resource_module.setrlimit(
+                _resource_module.RLIMIT_CPU, (cpu_time_seconds, cpu_time_seconds)
+            )
 
             # Core dump disabled
             _resource_module.setrlimit(_resource_module.RLIMIT_CORE, (0, 0))
@@ -496,14 +507,20 @@ class Sandbox:
         """
         try:
             import psutil
+
             # On Windows, we can't set hard limits like on POSIX,
             # but we can monitor and self-terminate if exceeded.
             # This is handled at a higher level (execute() method timeout).
             # Here we just set process priority to below-normal as a soft constraint.
             proc = psutil.Process()
             proc.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
-        except (ImportError, AttributeError, psutil.Error):
-            pass  # psutil not available or error setting priority
+        except ImportError:
+            pass  # psutil not installed; nothing to degrade to
+        except Exception:
+            # psutil.Error cannot be named in the except clause: when the import
+            # above is what failed, the name is unbound and evaluating the
+            # clause raises UnboundLocalError instead of degrading gracefully.
+            pass  # error setting priority
 
     def _start_process(self) -> None:
         """Start process-based sandbox."""
@@ -530,13 +547,16 @@ class Sandbox:
 
         # Build docker run command
         cmd = [
-            "docker", "run",
+            "docker",
+            "run",
             "-d",  # Detached
-            "--name", f"ccea-sandbox-{self._sandbox_id[:8]}",
+            "--name",
+            f"ccea-sandbox-{self._sandbox_id[:8]}",
             "--rm",  # Auto remove
             f"--memory={self.config.memory_limit_mb}m",
             f"--cpus={self.config.cpu_limit}",
-            "--network", self.config.docker_network,
+            "--network",
+            self.config.docker_network,
         ]
 
         # Read-only filesystem
@@ -615,9 +635,7 @@ class Sandbox:
         self._metrics.timestamp = datetime.utcnow()
 
         if self._start_time:
-            self._metrics.uptime_seconds = (
-                datetime.utcnow() - self._start_time
-            ).total_seconds()
+            self._metrics.uptime_seconds = (datetime.utcnow() - self._start_time).total_seconds()
 
         self._metrics.restart_count = self._restart_count
 
@@ -625,6 +643,7 @@ class Sandbox:
         if self._process and self._process.is_alive():
             try:
                 import psutil
+
                 proc = psutil.Process(self._process.pid)
                 self._metrics.cpu_percent = proc.cpu_percent()
                 mem_info = proc.memory_info()
@@ -636,8 +655,14 @@ class Sandbox:
         if self._container_id:
             try:
                 result = subprocess.run(
-                    ["docker", "stats", "--no-stream", "--format",
-                     "{{.CPUPerc}},{{.MemUsage}}", self._container_id],
+                    [
+                        "docker",
+                        "stats",
+                        "--no-stream",
+                        "--format",
+                        "{{.CPUPerc}},{{.MemUsage}}",
+                        self._container_id,
+                    ],
                     capture_output=True,
                     text=True,
                     timeout=5,

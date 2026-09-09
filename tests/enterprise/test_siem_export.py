@@ -394,7 +394,9 @@ class TestSIEMExportService:
     @pytest.fixture
     def service(self) -> SIEMExportService:
         """Create service instance for testing."""
-        return SIEMExportService()
+        # simulation_mode: the fixtures point at example.com endpoints, which
+        # do not resolve. The exporters expose this switch for that reason.
+        return SIEMExportService(simulation_mode=True)
 
     @pytest.fixture
     def splunk_config(self) -> SIEMConfig:
@@ -420,9 +422,7 @@ class TestSIEMExportService:
         assert len(service._connections) == 0
         assert len(service._events) == 0
 
-    def test_add_connection(
-        self, service: SIEMExportService, splunk_config: SIEMConfig
-    ) -> None:
+    def test_add_connection(self, service: SIEMExportService, splunk_config: SIEMConfig) -> None:
         """Test adding a SIEM connection."""
         connection = service.add_connection(splunk_config)
         assert connection.connection_id is not None
@@ -441,9 +441,7 @@ class TestSIEMExportService:
         assert len(service._connections) == 2
         assert conn1.connection_id != conn2.connection_id
 
-    def test_remove_connection(
-        self, service: SIEMExportService, splunk_config: SIEMConfig
-    ) -> None:
+    def test_remove_connection(self, service: SIEMExportService, splunk_config: SIEMConfig) -> None:
         """Test removing a SIEM connection."""
         connection = service.add_connection(splunk_config)
         result = service.remove_connection(connection.connection_id)
@@ -455,9 +453,7 @@ class TestSIEMExportService:
         result = service.remove_connection("non-existent")
         assert result is False
 
-    def test_get_connection(
-        self, service: SIEMExportService, splunk_config: SIEMConfig
-    ) -> None:
+    def test_get_connection(self, service: SIEMExportService, splunk_config: SIEMConfig) -> None:
         """Test getting connection by ID."""
         connection = service.add_connection(splunk_config)
         retrieved = service.get_connection(connection.connection_id)
@@ -476,9 +472,7 @@ class TestSIEMExportService:
         connections = service.list_connections()
         assert len(connections) == 2
 
-    def test_test_connection(
-        self, service: SIEMExportService, splunk_config: SIEMConfig
-    ) -> None:
+    def test_test_connection(self, service: SIEMExportService, splunk_config: SIEMConfig) -> None:
         """Test testing a SIEM connection."""
         connection = service.add_connection(splunk_config)
         result = service.test_connection(connection.connection_id)
@@ -501,9 +495,7 @@ class TestSIEMExportService:
         assert event.category == EventCategory.AUTH_FAILURE
         assert len(service._events) == 1
 
-    def test_export_event(
-        self, service: SIEMExportService, splunk_config: SIEMConfig
-    ) -> None:
+    def test_export_event(self, service: SIEMExportService, splunk_config: SIEMConfig) -> None:
         """Test exporting a single event."""
         connection = service.add_connection(splunk_config)
         event = service.create_event(
@@ -533,9 +525,7 @@ class TestSIEMExportService:
         assert batch.batch_id is not None
         assert batch.size == 5
 
-    def test_export_batch(
-        self, service: SIEMExportService, splunk_config: SIEMConfig
-    ) -> None:
+    def test_export_batch(self, service: SIEMExportService, splunk_config: SIEMConfig) -> None:
         """Test exporting an event batch."""
         connection = service.add_connection(splunk_config)
         events = [
@@ -567,9 +557,7 @@ class TestSIEMExportService:
                 outcome="success",
                 message=f"Event {i}",
             )
-        result = service.export_pending_events(
-            connection.connection_id, batch_size=5
-        )
+        result = service.export_pending_events(connection.connection_id, batch_size=5)
         assert result is not None
         assert result.events_exported == 5
 
@@ -676,7 +664,7 @@ class TestSplunkExporter:
             endpoint="https://splunk.example.com:8088",
             api_key="test-key",
         )
-        return SplunkExporter(config)
+        return SplunkExporter(config, simulation_mode=True)
 
     def test_export_event(self, exporter: SplunkExporter) -> None:
         """Test exporting single event."""
@@ -712,7 +700,7 @@ class TestElasticsearchExporter:
             provider=SIEMProvider.ELASTICSEARCH,
             endpoint="https://elastic.example.com:9200",
         )
-        return ElasticsearchExporter(config)
+        return ElasticsearchExporter(config, simulation_mode=True)
 
     def test_export_event(self, exporter: ElasticsearchExporter) -> None:
         """Test exporting single event."""
@@ -754,7 +742,10 @@ class TestFactoryFunctions:
 
     def test_export_to_splunk(self) -> None:
         """Test convenience function for Splunk export."""
-        service = create_siem_export()
+        # The endpoint below is an example.com name that never resolves, so the
+        # service runs in simulation mode; create_siem_export() has no switch
+        # for that, hence the direct construction.
+        service = SIEMExportService(simulation_mode=True)
         events = [
             SecurityEvent(
                 event_id=f"evt-{i}",
@@ -782,7 +773,7 @@ class TestFactoryFunctions:
 
     def test_export_to_elk(self) -> None:
         """Test convenience function for ELK export."""
-        service = create_siem_export()
+        service = SIEMExportService(simulation_mode=True)
         events = [
             SecurityEvent(
                 event_id=f"evt-{i}",

@@ -6,11 +6,12 @@
 
 ## Overview
 
-The Cloud Zone provides research, backtesting, monitoring, and lifecycle management capabilities. It is designed with strict security boundaries: Cloud **does not** have access to trading credentials or order execution capabilities.
+The Cloud Zone provides research, backtesting, monitoring, and lifecycle management capabilities. It is built around one hard boundary: the Cloud **never** holds broker credentials or API keys, and **never** generates, transmits or executes a trading order. Those live entirely in the customer-hosted Agent.
 
 ### Design Doc Reference (§4.1)
 
 Cloud components per Design Doc:
+
 - **Control Plane** - Deployment/Run lifecycle, Command queue, Telemetry receiver
 - **Artifact Registry** - Immutable builds, signed, with SBOM
 - **Governance** - RBAC, multi-tenancy, data residency, retention policies
@@ -228,6 +229,7 @@ cloud:
 ---
 
 **Related Documentation:**
+
 - [CCEA Overview](../CCEA_OVERVIEW.md)
 - [Agent Documentation](../agent/README.md)
 - [Protocol Schemas](../schemas/README.md)

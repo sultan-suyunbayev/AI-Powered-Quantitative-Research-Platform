@@ -20,6 +20,62 @@ from services.rest_budget import (
 )
 
 
+def _make_cfg(**overrides):
+    """Build a config double with every attribute RestBudgetSession reads.
+
+    A bare Mock() auto-creates attributes, so an unset ``cache_dir`` came back
+    as a Mock and Path() rejected it.  Spell the defaults out and let each test
+    override only what it exercises.
+    """
+    cfg = Mock()
+    cfg.enabled = True
+    cfg.cache = None
+    cfg.cache_dir = None
+    cfg.cache_ttl_days = None
+    cfg.ttl_days = None
+    cfg.cache_mode = None
+    cfg.checkpoint = None
+    cfg.concurrency = None
+    cfg.batch_size = None
+    cfg.global_ = None
+    cfg.dynamic_from_headers = None
+    cfg.jitter_ms = None
+    cfg.jitter = None
+    cfg.cooldown_s = None
+    cfg.cooldown_sec = None
+    cfg.timeout = 0.0
+    cfg.timeout_s = 0.0
+    cfg.retry = None
+    cfg.endpoints = {}
+    for key, value in overrides.items():
+        setattr(cfg, key, value)
+    return cfg
+
+
+def _make_cache_cfg(directory, mode="read_write", ttl_days=None):
+    """Cache sub-config double: the same Mock trap applies to its attributes."""
+    cache = Mock()
+    cache.dir = str(directory)
+    cache.path = None
+    cache.cache_dir = None
+    cache.mode = mode
+    cache.ttl_days = ttl_days
+    cache.ttl = None
+    return cache
+
+
+def _make_checkpoint_cfg(path, *, enabled=True, resume=True):
+    checkpoint = Mock()
+    checkpoint.path = str(path)
+    checkpoint.enabled = enabled
+    checkpoint.resume_from_checkpoint = resume
+    return checkpoint
+
+
+# 8.64 ms expressed in days: short enough that a brief sleep expires the entry.
+_TINY_TTL_DAYS = 1e-7
+
+
 class TestTokenBucket:
     """Test TokenBucket rate limiter."""
 
@@ -161,11 +217,9 @@ class TestRestBudgetSessionCaching:
 
     def test_cache_lookup_miss(self):
         """Test cache lookup returns miss for uncached request."""
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = True
-        cfg.cache = Mock()
-        cfg.cache.dir = tempfile.mkdtemp()
-        cfg.cache.mode = "read_write"
+        cfg.cache = _make_cache_cfg(tempfile.mkdtemp(), mode="read_write")
         cfg.global_ = None
         cfg.endpoints = {}
         cfg.concurrency = None
@@ -180,11 +234,9 @@ class TestRestBudgetSessionCaching:
     def test_cache_store_and_lookup_hit(self):
         """Test cache store and subsequent hit."""
         cache_dir = tempfile.mkdtemp()
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = True
-        cfg.cache = Mock()
-        cfg.cache.dir = cache_dir
-        cfg.cache.mode = "read_write"
+        cfg.cache = _make_cache_cfg(cache_dir, mode="read_write")
         cfg.global_ = None
         cfg.endpoints = {}
         cfg.concurrency = None
@@ -210,12 +262,10 @@ class TestRestBudgetSessionCaching:
     def test_cache_ttl_expiry(self):
         """Test cache entries expire after TTL."""
         cache_dir = tempfile.mkdtemp()
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = True
-        cfg.cache = Mock()
-        cfg.cache.dir = cache_dir
-        cfg.cache.mode = "read_write"
-        cfg.cache.ttl_days = 0.00001  # Very short TTL
+        cfg.cache = _make_cache_cfg(cache_dir, mode="read_write")
+        cfg.cache.ttl_days = _TINY_TTL_DAYS
         cfg.global_ = None
         cfg.endpoints = {}
         cfg.concurrency = None
@@ -223,14 +273,14 @@ class TestRestBudgetSessionCaching:
         cfg.retry = None
 
         session = RestBudgetSession(cfg)
-        session._cache_ttl_days = 0.00001
+        session._cache_ttl_days = _TINY_TTL_DAYS
 
         # Store and immediately lookup
         key, _, _ = session._cache_lookup("GET", "http://example.com/api", {}, "api")
         session._cache_store(key, {"data": "test"})
 
-        # Wait for expiry
-        time.sleep(0.1)
+        # Wait for expiry (TTL is well under the sleep)
+        time.sleep(10 * _TINY_TTL_DAYS * 86_400.0)
 
         # Should be expired
         _, payload, hit = session._cache_lookup("GET", "http://example.com/api", {}, "api")
@@ -239,11 +289,9 @@ class TestRestBudgetSessionCaching:
     def test_is_cached_method(self):
         """Test is_cached method."""
         cache_dir = tempfile.mkdtemp()
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = True
-        cfg.cache = Mock()
-        cfg.cache.dir = cache_dir
-        cfg.cache.mode = "read_write"
+        cfg.cache = _make_cache_cfg(cache_dir, mode="read_write")
         cfg.global_ = None
         cfg.endpoints = {}
         cfg.concurrency = None
@@ -253,14 +301,14 @@ class TestRestBudgetSessionCaching:
         session = RestBudgetSession(cfg)
 
         # Not cached initially
-        assert session.is_cached("http://example.com/api") is False
+        assert session.is_cached("http://example.com/api", endpoint="api") is False
 
-        # Store
+        # Store under the endpoint key the lookup used
         key, _, _ = session._cache_lookup("GET", "http://example.com/api", {}, "api")
         session._cache_store(key, {"data": "test"})
 
-        # Now cached
-        assert session.is_cached("http://example.com/api") is True
+        # Now cached, for that same endpoint
+        assert session.is_cached("http://example.com/api", endpoint="api") is True
 
 
 class TestRestBudgetSessionRequests:
@@ -275,7 +323,7 @@ class TestRestBudgetSessionRequests:
         mock_response.headers = {}
         mock_get.return_value = mock_response
 
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = False  # Disable rate limiting for simple test
         cfg.global_ = None
         cfg.endpoints = {}
@@ -297,7 +345,7 @@ class TestRestBudgetSessionRequests:
         mock_response.headers = {}
         mock_get.return_value = mock_response
 
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = True
         cfg.global_ = TokenBucketConfig(rps=1.0, burst=1.0)
         cfg.endpoints = {}
@@ -328,11 +376,9 @@ class TestRestBudgetSessionRequests:
     def test_get_request_with_cache_hit(self, mock_get):
         """Test GET request uses cache when available."""
         cache_dir = tempfile.mkdtemp()
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = True
-        cfg.cache = Mock()
-        cfg.cache.dir = cache_dir
-        cfg.cache.mode = "read_write"
+        cfg.cache = _make_cache_cfg(cache_dir, mode="read_write")
         cfg.global_ = None
         cfg.endpoints = {}
         cfg.concurrency = None
@@ -365,7 +411,7 @@ class TestRestBudgetSessionRequests:
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError()
         mock_get.return_value = mock_response
 
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = True
         cfg.global_ = TokenBucketConfig(rps=10.0, burst=10.0)
         cfg.endpoints = {}
@@ -391,12 +437,9 @@ class TestRestBudgetSessionCheckpointing:
         """Test saving and loading checkpoint."""
         checkpoint_path = Path(tempfile.mktemp(suffix=".json"))
 
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = True
-        cfg.checkpoint = Mock()
-        cfg.checkpoint.path = str(checkpoint_path)
-        cfg.checkpoint.enabled = True
-        cfg.checkpoint.resume_from_checkpoint = True
+        cfg.checkpoint = _make_checkpoint_cfg(str(checkpoint_path), enabled=True, resume=True)
         cfg.global_ = None
         cfg.endpoints = {}
         cfg.concurrency = None
@@ -428,7 +471,7 @@ class TestRestBudgetSessionStats:
 
     def test_stats_initialization(self):
         """Test stats are initialized to zero."""
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = True
         cfg.global_ = None
         cfg.endpoints = {}
@@ -453,7 +496,7 @@ class TestRestBudgetSessionStats:
         mock_response.headers = {}
         mock_get.return_value = mock_response
 
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = False
         cfg.global_ = None
         cfg.endpoints = {}
@@ -470,7 +513,7 @@ class TestRestBudgetSessionStats:
 
     def test_plan_request(self):
         """Test plan_request tracks planned requests."""
-        cfg = Mock()
+        cfg = _make_cfg()
         cfg.enabled = True
         cfg.global_ = None
         cfg.endpoints = {}
@@ -483,8 +526,9 @@ class TestRestBudgetSessionStats:
         session.plan_request("/api/v1/data", count=10, tokens=2.0)
 
         stats = session.stats()
-        assert stats["planned_requests"]["/api/v1/data"] == 10
-        assert stats["planned_tokens"]["/api/v1/data"] == 20.0
+        # plan_request normalises the endpoint to "<METHOD> <path>".
+        assert stats["planned_requests"]["GET /api/v1/data"] == 10
+        assert stats["planned_tokens"]["GET /api/v1/data"] == 20.0
 
 
 class TestIterTimeChunks:

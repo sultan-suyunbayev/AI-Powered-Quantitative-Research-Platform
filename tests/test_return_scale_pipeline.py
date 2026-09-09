@@ -1,11 +1,14 @@
 import inspect
+import re
 
 import pytest
+
 torch = pytest.importorskip("torch")
 import trading_patchnew
 
 distributional_ppo = pytest.importorskip(
-    "distributional_ppo", reason="distributional PPO module requires optional sb3_contrib dependency"
+    "distributional_ppo",
+    reason="distributional PPO module requires optional sb3_contrib dependency",
 )
 DistributionalPPO = distributional_ppo.DistributionalPPO
 
@@ -65,9 +68,7 @@ def test_return_scale_pipeline_fraction_units():
 
     buggy_last = float(mean_values_norm[-1] / base_scale)
     buggy_returns = _discounted_series(buffer_rewards, gamma, buggy_last)
-    buggy_raw, _ = algo._decode_returns_scale_only(
-        torch.tensor(buggy_returns, dtype=torch.float32)
-    )
+    buggy_raw, _ = algo._decode_returns_scale_only(torch.tensor(buggy_returns, dtype=torch.float32))
     assert not torch.allclose(buggy_raw, expected_raw, atol=1e-6)
 
 
@@ -109,14 +110,17 @@ def test_return_scale_pipeline_with_normalization():
     assert returns_abs_p99.item() < 0.2
 
 
+# Multiplication or division by exactly 100 --  keeps "* 10000" (the bps
+# conversion in the spread calculation) from matching as a substring.
+_PERCENT_SCALING = re.compile(r"[*/]\s*100")
+
+
 def test_reward_pipeline_has_no_percent_scaling():
     step_src = inspect.getsource(trading_patchnew.TradingEnv.step)
-    for pattern in ("*100", "* 100", "/100", "/ 100"):
-        assert pattern not in step_src
+    assert not _PERCENT_SCALING.search(step_src), "TradingEnv.step scales by 100"
 
-    collect_src = inspect.getsource(DistributionalPPO._collect_rollouts)
-    for pattern in ("*100", "* 100", "/100", "/ 100"):
-        assert pattern not in collect_src
+    collect_src = inspect.getsource(DistributionalPPO.collect_rollouts)
+    assert not _PERCENT_SCALING.search(collect_src), "collect_rollouts scales by 100"
 
 
 def test_distributional_ppo_source_has_no_action_nvec_logging():

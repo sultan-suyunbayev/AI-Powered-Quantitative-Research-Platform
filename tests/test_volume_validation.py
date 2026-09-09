@@ -24,10 +24,30 @@ import numpy as np
 import pytest
 import math
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
 
 # Try to import the compiled Cython module
 try:
     from obs_builder import build_observation_vector
+
     HAS_OBS_BUILDER = True
 except ImportError:
     HAS_OBS_BUILDER = False
@@ -43,7 +63,7 @@ class TestVolumeMetricValidation:
             "price": 50000.0,
             "prev_price": 49500.0,
             "log_volume_norm": 0.5,  # Typical normalized volume
-            "rel_volume": 0.3,        # Typical relative volume
+            "rel_volume": 0.3,  # Typical relative volume
             "ma5": 50100.0,
             "ma20": 49900.0,
             "rsi14": 55.0,
@@ -62,15 +82,18 @@ class TestVolumeMetricValidation:
             "risk_off_flag": False,
             "cash": 10000.0,
             "units": 0.5,
+            "signal_pos": 0.0,
             "last_vol_imbalance": 0.1,
             "last_trade_intensity": 5.0,
             "last_realized_spread": 0.001,
             "last_agent_fill_ratio": 0.95,
             "token_id": 0,
-            "max_num_tokens": 1,
-            "num_tokens": 1,
-            "norm_cols_values": np.zeros(21, dtype=np.float32),
-            "out_features": np.zeros(63, dtype=np.float32),
+            "max_num_tokens": _MAX_TOKENS,
+            "num_tokens": _MAX_TOKENS,
+            "norm_cols_values": np.zeros(_EXT_DIM, dtype=np.float32),
+            "norm_cols_validity": np.ones(_EXT_DIM, dtype=np.uint8),
+            "enable_validity_flags": True,
+            "out_features": np.zeros(_N_FEATURES, dtype=np.float32),
         }
 
     # ========================================================================
@@ -115,7 +138,7 @@ class TestVolumeMetricValidation:
         """Test 3: Volume metrics in typical tanh range [-1, 1] should succeed."""
         params = self.valid_params.copy()
         params["log_volume_norm"] = 0.95  # High volume
-        params["rel_volume"] = -0.1       # Slight negative (edge case)
+        params["rel_volume"] = -0.1  # Slight negative (edge case)
 
         # Should not raise
         build_observation_vector(**params)
@@ -141,8 +164,9 @@ class TestVolumeMetricValidation:
         error_msg = str(exc_info.value)
         assert "NaN" in error_msg, "Error should mention NaN"
         assert "log_volume_norm" in error_msg.lower(), "Error should mention log_volume_norm"
-        assert "corrupted" in error_msg.lower() or "volume" in error_msg.lower(), \
-            "Error should explain data corruption"
+        assert (
+            "corrupted" in error_msg.lower() or "volume" in error_msg.lower()
+        ), "Error should explain data corruption"
 
     def test_nan_rel_volume_raises_error(self):
         """Test 5: NaN rel_volume should raise ValueError."""
@@ -260,7 +284,7 @@ class TestVolumeMetricValidation:
         """Test 13: Volume metrics near tanh saturation (±0.99) should succeed."""
         params = self.valid_params.copy()
         params["log_volume_norm"] = 0.99  # Near saturation (very high volume)
-        params["rel_volume"] = -0.99      # Near negative saturation (edge case)
+        params["rel_volume"] = -0.99  # Near negative saturation (edge case)
 
         # Should not raise
         build_observation_vector(**params)
@@ -296,7 +320,7 @@ class TestVolumeMetricValidation:
         params["price"] = 51234.56
         params["prev_price"] = 51000.00
         params["log_volume_norm"] = 0.75  # High volume (normalized)
-        params["rel_volume"] = 0.82       # High relative volume
+        params["rel_volume"] = 0.82  # High relative volume
         params["ma5"] = 51100.0
         params["ma20"] = 50800.0
         params["rsi14"] = 63.5
@@ -307,7 +331,7 @@ class TestVolumeMetricValidation:
         obs = params["out_features"]
 
         # Validate observation properties
-        assert obs.shape == (63,), f"Expected shape (63,), got {obs.shape}"
+        assert obs.shape == (_N_FEATURES,), f"Expected shape (_N_FEATURES,), got {obs.shape}"
         assert obs[0] == pytest.approx(51234.56), "Price at index 0"
         assert obs[1] == pytest.approx(0.75), "log_volume_norm at index 1"
         assert obs[2] == pytest.approx(0.82), "rel_volume at index 2"
@@ -332,10 +356,10 @@ class TestVolumeMetricValidation:
 
         # Verify error message is informative
         error_msg = str(exc_info.value)
-        assert "log_volume_norm" in error_msg.lower(), \
-            "Error must identify log_volume_norm parameter"
-        assert "NaN" in error_msg or "nan" in error_msg.lower(), \
-            "Error must mention NaN"
+        assert (
+            "log_volume_norm" in error_msg.lower()
+        ), "Error must identify log_volume_norm parameter"
+        assert "NaN" in error_msg or "nan" in error_msg.lower(), "Error must mention NaN"
 
     def test_fail_fast_not_silent_failure_volume_metrics(self):
         """
@@ -359,10 +383,8 @@ class TestVolumeMetricValidation:
 
         # Verify error message is informative
         error_msg = str(exc_info.value)
-        assert "rel_volume" in error_msg.lower(), \
-            "Error must identify rel_volume parameter"
-        assert "NaN" in error_msg or "nan" in error_msg.lower(), \
-            "Error must mention NaN"
+        assert "rel_volume" in error_msg.lower(), "Error must identify rel_volume parameter"
+        assert "NaN" in error_msg or "nan" in error_msg.lower(), "Error must mention NaN"
 
     # ========================================================================
     # P5 Tests: Real-world scenarios
@@ -456,15 +478,18 @@ class TestVolumeMetricErrorMessages:
             "risk_off_flag": False,
             "cash": 10000.0,
             "units": 0.0,
+            "signal_pos": 0.0,
             "last_vol_imbalance": 0.0,
             "last_trade_intensity": 0.0,
             "last_realized_spread": 0.0,
             "last_agent_fill_ratio": 1.0,
             "token_id": 0,
-            "max_num_tokens": 1,
-            "num_tokens": 1,
-            "norm_cols_values": np.zeros(21, dtype=np.float32),
-            "out_features": np.zeros(63, dtype=np.float32),
+            "max_num_tokens": _MAX_TOKENS,
+            "num_tokens": _MAX_TOKENS,
+            "norm_cols_values": np.zeros(_EXT_DIM, dtype=np.float32),
+            "norm_cols_validity": np.ones(_EXT_DIM, dtype=np.uint8),
+            "enable_validity_flags": True,
+            "out_features": np.zeros(_N_FEATURES, dtype=np.float32),
         }
 
     def test_error_message_contains_diagnostic_info(self):
@@ -478,9 +503,10 @@ class TestVolumeMetricErrorMessages:
         error_msg = str(exc_info.value)
 
         # Should contain diagnostic keywords
-        assert any(keyword in error_msg.lower() for keyword in
-                  ["volume", "corrupted", "data", "calculation", "check"]), \
-            "Error should provide diagnostic context"
+        assert any(
+            keyword in error_msg.lower()
+            for keyword in ["volume", "corrupted", "data", "calculation", "check"]
+        ), "Error should provide diagnostic context"
 
     def test_error_message_for_infinity_is_clear(self):
         """Test 22: Infinity error should clearly explain the issue."""
@@ -494,9 +520,9 @@ class TestVolumeMetricErrorMessages:
 
         # Should mention that infinity is invalid and why
         assert "infinity" in error_msg.lower(), "Should explain infinity issue"
-        assert any(keyword in error_msg.lower() for keyword in
-                  ["overflow", "finite", "invalid"]), \
-            "Should clearly identify the problem"
+        assert any(
+            keyword in error_msg.lower() for keyword in ["overflow", "finite", "invalid"]
+        ), "Should clearly identify the problem"
 
 
 if __name__ == "__main__":

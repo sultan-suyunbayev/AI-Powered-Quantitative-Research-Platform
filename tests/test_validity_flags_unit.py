@@ -13,6 +13,12 @@ import numpy as np
 import pytest
 from unittest.mock import MagicMock
 
+import feature_config as _fc
+
+# The external block grew from 21 (crypto only) to 35 (crypto + stock + macro).
+# Take the width from the layout so the test tracks it instead of pinning it.
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+
 
 def test_get_safe_float_with_validity_valid_value():
     """Test that valid values return (value, True)."""
@@ -40,7 +46,7 @@ def test_get_safe_float_with_validity_nan_handling():
     """Test that NaN values return (default, False)."""
     from mediator import Mediator
 
-    row = {"nan_feature": float('nan'), "inf_feature": float('inf'), "neg_inf": float('-inf')}
+    row = {"nan_feature": float("nan"), "inf_feature": float("inf"), "neg_inf": float("-inf")}
 
     # NaN
     value, is_valid = Mediator._get_safe_float_with_validity(row, "nan_feature", default=0.0)
@@ -147,7 +153,7 @@ def test_get_safe_float_with_validity_semantic_distinction():
     value_zero, is_valid_zero = Mediator._get_safe_float_with_validity(row_zero, "cvd_24h", 0.0)
 
     # Scenario 2: CVD is missing (NaN)
-    row_nan = {"cvd_24h": float('nan')}
+    row_nan = {"cvd_24h": float("nan")}
     value_nan, is_valid_nan = Mediator._get_safe_float_with_validity(row_nan, "cvd_24h", 0.0)
 
     # VALUES are the same (both 0.0)
@@ -168,7 +174,7 @@ def test_extract_norm_cols_returns_tuple():
 
     mediator = Mediator.__new__(Mediator)
 
-    row = {"cvd_24h": 1.0, "cvd_7d": float('nan'), "yang_zhang_48h": 0.5}
+    row = {"cvd_24h": 1.0, "cvd_7d": float("nan"), "yang_zhang_48h": 0.5}
 
     result = mediator._extract_norm_cols(row)
 
@@ -181,8 +187,8 @@ def test_extract_norm_cols_returns_tuple():
     # Check shapes
     assert isinstance(values, np.ndarray), "values should be ndarray"
     assert isinstance(validity, np.ndarray), "validity should be ndarray"
-    assert values.shape == (21,), "values should have shape (21,)"
-    assert validity.shape == (21,), "validity should have shape (21,)"
+    assert values.shape == (_EXT_DIM,), f"values should have shape ({_EXT_DIM},)"
+    assert validity.shape == (_EXT_DIM,), f"validity should have shape ({_EXT_DIM},)"
     assert values.dtype == np.float32, "values should be float32"
     assert validity.dtype == bool, "validity should be bool"
 
@@ -195,14 +201,14 @@ def test_extract_norm_cols_validity_tracking():
 
     # Mix of valid, NaN, and None values
     row = {
-        "cvd_24h": 1.5,               # [0] - valid
-        "cvd_7d": float('nan'),       # [1] - invalid (NaN)
-        "yang_zhang_48h": 0.8,        # [2] - valid
-        "yang_zhang_7d": None,        # [3] - invalid (None)
-        "garch_200h": float('inf'),   # [4] - invalid (Inf)
-        "garch_14d": 0.5,             # [5] - valid
-        "ret_12h": 0.0,               # [6] - valid (zero is valid!)
-        "ret_24h": -0.1,              # [7] - valid (negative is valid!)
+        "cvd_24h": 1.5,  # [0] - valid
+        "cvd_7d": float("nan"),  # [1] - invalid (NaN)
+        "yang_zhang_48h": 0.8,  # [2] - valid
+        "yang_zhang_7d": None,  # [3] - invalid (None)
+        "garch_200h": float("inf"),  # [4] - invalid (Inf)
+        "garch_14d": 0.5,  # [5] - valid
+        "ret_12h": 0.0,  # [6] - valid (zero is valid!)
+        "ret_24h": -0.1,  # [7] - valid (negative is valid!)
         # Rest default to 0.0 with validity depending on presence
     }
 
@@ -243,21 +249,45 @@ def test_extract_norm_cols_all_valid():
 
     mediator = Mediator.__new__(Mediator)
 
-    # All 21 features present and valid
+    # Every external feature present and valid
     row = {
-        "cvd_24h": 0.1, "cvd_7d": 0.2,
-        "yang_zhang_48h": 0.3, "yang_zhang_7d": 0.4,
-        "garch_200h": 0.5, "garch_14d": 0.6,
-        "ret_12h": 0.01, "ret_24h": 0.02, "ret_4h": 0.005,
-        "sma_12000": 50000.0, "yang_zhang_30d": 0.7,
-        "parkinson_48h": 0.8, "parkinson_7d": 0.9,
-        "garch_30d": 0.35, "taker_buy_ratio": 0.52,
+        "cvd_24h": 0.1,
+        "cvd_7d": 0.2,
+        "yang_zhang_48h": 0.3,
+        "yang_zhang_7d": 0.4,
+        "garch_200h": 0.5,
+        "garch_14d": 0.6,
+        "ret_12h": 0.01,
+        "ret_24h": 0.02,
+        "ret_4h": 0.005,
+        "sma_12000": 50000.0,
+        "yang_zhang_30d": 0.7,
+        "parkinson_48h": 0.8,
+        "parkinson_7d": 0.9,
+        "garch_30d": 0.35,
+        "taker_buy_ratio": 0.52,
         "taker_buy_ratio_sma_24h": 0.51,
         "taker_buy_ratio_sma_8h": 0.50,
         "taker_buy_ratio_sma_16h": 0.505,
         "taker_buy_ratio_momentum_4h": 0.01,
         "taker_buy_ratio_momentum_8h": 0.02,
         "taker_buy_ratio_momentum_12h": 0.015,
+        # Stock block (Phase 5)
+        "vix_normalized": 0.4,  # already tanh-normalised upstream, range [-3, 3]
+        "vix_regime": 0.25,
+        "market_regime": 0.4,
+        "rs_spy_20d": 0.03,
+        "rs_spy_50d": 0.05,
+        "rs_qqq_20d": 0.02,
+        "sector_momentum": 0.01,
+        # Macro & corporate block (Phase 6)
+        "dxy_value": 103.0,
+        "treasury_10y_yield": 4.2,
+        "real_yield_proxy": 1.8,
+        "days_until_earnings": 30.0,
+        "trailing_dividend_yield": 1.4,
+        "last_earnings_surprise": 5.0,
+        "in_earnings_blackout": 0.0,
     }
 
     values, validity = mediator._extract_norm_cols(row)
@@ -278,15 +308,22 @@ def test_extract_norm_cols_all_missing():
     mediator = Mediator.__new__(Mediator)
 
     # All features are NaN (e.g., during cold start or data outage)
-    row = {f"feature_{i}": float('nan') for i in range(30)}  # Fake row with NaN
+    row = {f"feature_{i}": float("nan") for i in range(30)}  # Fake row with NaN
 
     values, validity = mediator._extract_norm_cols(row)
 
     # All should be invalid (features not in row)
     assert np.all(~validity), "All features should be invalid when data is missing"
 
-    # All values should be 0.0 (default fallback)
-    assert np.all(values == 0.0), "All missing features should fallback to 0.0"
+    # Most features fall back to 0.0.  Two carry a documented non-zero default:
+    # vix_regime (0.5 = "normal") and days_until_earnings_norm (1.0 = "far from
+    # earnings"), because 0.0 would read as "extreme VIX" / "earnings today".
+    non_zero_defaults = {22: 0.5, 31: 1.0}
+    for idx, value in enumerate(values):
+        expected = non_zero_defaults.get(idx, 0.0)
+        assert value == pytest.approx(
+            expected
+        ), f"missing feature [{idx}] should fall back to {expected}, got {value}"
 
 
 def test_extract_norm_cols_partial_missing():
@@ -298,17 +335,17 @@ def test_extract_norm_cols_partial_missing():
     # Realistic scenario: Some features present, some missing
     # E.g., during GARCH warmup period (first 200h), GARCH features are NaN
     row = {
-        "cvd_24h": 100.0,             # Valid
-        "cvd_7d": 500.0,              # Valid
-        "yang_zhang_48h": 0.015,      # Valid
-        "yang_zhang_7d": 0.018,       # Valid
-        "garch_200h": float('nan'),   # Missing (warmup)
-        "garch_14d": float('nan'),    # Missing (warmup)
-        "garch_30d": float('nan'),    # Missing (warmup)
-        "ret_12h": 0.002,             # Valid
-        "ret_24h": 0.005,             # Valid
-        "ret_4h": 0.001,              # Valid
-        "taker_buy_ratio": 0.55,      # Valid
+        "cvd_24h": 100.0,  # Valid
+        "cvd_7d": 500.0,  # Valid
+        "yang_zhang_48h": 0.015,  # Valid
+        "yang_zhang_7d": 0.018,  # Valid
+        "garch_200h": float("nan"),  # Missing (warmup)
+        "garch_14d": float("nan"),  # Missing (warmup)
+        "garch_30d": float("nan"),  # Missing (warmup)
+        "ret_12h": 0.002,  # Valid
+        "ret_24h": 0.005,  # Valid
+        "ret_4h": 0.001,  # Valid
+        "taker_buy_ratio": 0.55,  # Valid
         # Other features missing
     }
 
@@ -356,7 +393,7 @@ def test_backward_compatibility_with_old_code():
     # Old code could temporarily use just values (ignore validity)
     # But this defeats the purpose of the fix!
     assert isinstance(values, np.ndarray), "Values can be used as before"
-    assert values.shape == (21,), "Shape is the same"
+    assert values.shape == (_EXT_DIM,), "Shape follows the declared external block"
 
 
 if __name__ == "__main__":

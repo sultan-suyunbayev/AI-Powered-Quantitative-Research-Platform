@@ -64,6 +64,7 @@ logger = logging.getLogger(__name__)
 
 class GovernancePolicyType(str, Enum):
     """Types of governance policies stored in DB."""
+
     RESIDENCY = "residency"
     RETENTION = "retention"
     DSAR = "dsar"
@@ -72,6 +73,7 @@ class GovernancePolicyType(str, Enum):
 @dataclass
 class GovernancePolicyRecord:
     """Database record for governance policies."""
+
     id: UUID
     workspace_id: UUID
     policy_type: GovernancePolicyType
@@ -86,6 +88,7 @@ class GovernancePolicyRecord:
 @dataclass
 class DSARRequestRecord:
     """Database record for DSAR requests."""
+
     id: UUID
     workspace_id: UUID
     user_id: UUID
@@ -111,6 +114,7 @@ class DSARRequestRecord:
 # ============================================================================
 # Governance DB Service
 # ============================================================================
+
 
 class GovernanceDBService:
     """
@@ -303,7 +307,6 @@ class GovernanceDBService:
         policy_config = {
             "workspace_id": str(policy.workspace_id),
             "primary_region": policy.primary_region.value,
-            "failover_region": policy.failover_region.value if policy.failover_region else None,
             "mode": policy.mode.name,
             "gdpr_compliant": policy.gdpr_compliant,
             "telemetry_local": policy.telemetry_local,
@@ -345,14 +348,20 @@ class GovernanceDBService:
             return None
 
         config = db_policy.config
-        policy = ResidencyPolicy(
-            workspace_id=config.get("workspace_id", str(workspace_id)),
-            primary_region=DataRegion(config.get("primary_region", "us_east")),
-            failover_region=DataRegion(config["failover_region"]) if config.get("failover_region") else None,
-            mode=ResidencyMode[config.get("mode", "CLOUD")],
-            gdpr_compliant=config.get("gdpr_compliant", False),
-            telemetry_local=config.get("telemetry_local", False),
-        )
+        policy_kwargs: Dict[str, Any] = {
+            "workspace_id": config.get("workspace_id", str(workspace_id)),
+            "primary_region": DataRegion(config.get("primary_region", "us_east")),
+            "mode": ResidencyMode[config.get("mode", "CLOUD")],
+            "gdpr_compliant": config.get("gdpr_compliant", False),
+            "telemetry_local": config.get("telemetry_local", False),
+        }
+        # allowed_regions is persisted above; restoring it here keeps a reloaded
+        # policy as wide as the one that was saved. Left out, the dataclass
+        # default silently narrowed it to us_east.
+        allowed_values = config.get("allowed_regions") or []
+        if allowed_values:
+            policy_kwargs["allowed_regions"] = {DataRegion(value) for value in allowed_values}
+        policy = ResidencyPolicy(**policy_kwargs)
 
         # Register in memory manager
         self._residency_manager._policies[str(workspace_id)] = policy
@@ -557,7 +566,9 @@ class GovernanceDBService:
                 pass  # Legacy model may not exist
 
             await self._session.commit()
-            logger.info(f"Persisted retention policy for workspace {workspace_id}, data_type={policy.data_type}")
+            logger.info(
+                f"Persisted retention policy for workspace {workspace_id}, data_type={policy.data_type}"
+            )
 
         except Exception as e:
             logger.warning(f"Failed to persist retention policy: {e}")
@@ -691,7 +702,9 @@ class GovernanceDBService:
 
         return result
 
-    async def get_pending_dsar_requests(self, workspace_id: Optional[UUID] = None) -> List[DSARRequest]:
+    async def get_pending_dsar_requests(
+        self, workspace_id: Optional[UUID] = None
+    ) -> List[DSARRequest]:
         """Get pending DSAR requests."""
         requests = self._dsar_service.get_pending_requests()
         if workspace_id:
@@ -738,7 +751,9 @@ class GovernanceDBService:
                     user_id=UUID(request.user_id),
                     request_type=request.request_type.value,
                     status=request.status.value,
-                    data_categories=list(request.data_categories) if request.data_categories else None,
+                    data_categories=(
+                        list(request.data_categories) if request.data_categories else None
+                    ),
                     reason=request.reason,
                     deadline=request.deadline,
                     extended_deadline=request.extended_deadline,
@@ -836,6 +851,7 @@ class GovernanceDBService:
 # ============================================================================
 # Factory
 # ============================================================================
+
 
 def create_governance_service(
     session: AsyncSession,

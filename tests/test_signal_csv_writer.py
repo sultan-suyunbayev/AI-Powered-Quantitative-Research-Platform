@@ -12,15 +12,33 @@ def test_header_and_append(tmp_path):
     path = tmp_path / "signals.csv"
     w = SignalCSVWriter(str(path))
     ts = _ts_ms(datetime.utcnow())
-    w.write({"ts_ms": ts, "symbol": "BTC", "side": "BUY", "volume_frac": 1, "score": 0.1, "features_hash": "x"})
+    w.write(
+        {
+            "ts_ms": ts,
+            "symbol": "BTC",
+            "side": "BUY",
+            "volume_frac": 1,
+            "score": 0.1,
+            "features_hash": "x",
+        }
+    )
     w.flush_fsync()
     w.close()
 
     w2 = SignalCSVWriter(str(path))
-    w2.write({"ts_ms": ts, "symbol": "ETH", "side": "SELL", "volume_frac": 2, "score": 0.2, "features_hash": "y"})
+    w2.write(
+        {
+            "ts_ms": ts,
+            "symbol": "ETH",
+            "side": "SELL",
+            "volume_frac": 2,
+            "score": 0.2,
+            "features_hash": "y",
+        }
+    )
     w2.close()
 
-    lines = path.read_text().strip().splitlines()
+    lines = path.read_text(encoding="utf-8").strip().splitlines()
     assert lines[0].startswith("ts_ms")
     assert len(lines) == 3  # header + 2 rows
 
@@ -34,12 +52,21 @@ def test_rotation_on_init(tmp_path):
     os.utime(path, (ts_old, ts_old))
 
     w = SignalCSVWriter(str(path))
-    w.write({"ts_ms": _ts_ms(datetime.utcnow()), "symbol": "BTC", "side": "BUY", "volume_frac": 1, "score": 0.1, "features_hash": "x"})
+    w.write(
+        {
+            "ts_ms": _ts_ms(datetime.utcnow()),
+            "symbol": "BTC",
+            "side": "BUY",
+            "volume_frac": 1,
+            "score": 0.1,
+            "features_hash": "x",
+        }
+    )
     w.close()
 
     assert rotated.exists()
     assert path.exists()
-    assert rotated.read_text().strip().splitlines()[0].startswith("ts_ms")
+    assert rotated.read_text(encoding="utf-8").strip().splitlines()[0].startswith("ts_ms")
 
 
 def test_rotation_on_write(tmp_path):
@@ -47,15 +74,33 @@ def test_rotation_on_write(tmp_path):
     w = SignalCSVWriter(str(path))
     day1 = datetime(2024, 1, 1, tzinfo=timezone.utc)
     day2 = day1 + timedelta(days=1)
-    w.write({"ts_ms": _ts_ms(day1), "symbol": "BTC", "side": "BUY", "volume_frac": 1, "score": 0.1, "features_hash": "x"})
-    w.write({"ts_ms": _ts_ms(day2), "symbol": "BTC", "side": "SELL", "volume_frac": 2, "score": 0.2, "features_hash": "y"})
+    w.write(
+        {
+            "ts_ms": _ts_ms(day1),
+            "symbol": "BTC",
+            "side": "BUY",
+            "volume_frac": 1,
+            "score": 0.1,
+            "features_hash": "x",
+        }
+    )
+    w.write(
+        {
+            "ts_ms": _ts_ms(day2),
+            "symbol": "BTC",
+            "side": "SELL",
+            "volume_frac": 2,
+            "score": 0.2,
+            "features_hash": "y",
+        }
+    )
     w.close()
 
     rotated = tmp_path / "signals-2024-01-01.csv"
     assert rotated.exists()
     assert path.exists()
-    assert len(rotated.read_text().strip().splitlines()) == 2
-    assert len(path.read_text().strip().splitlines()) == 2
+    assert len(rotated.read_text(encoding="utf-8").strip().splitlines()) == 2
+    assert len(path.read_text(encoding="utf-8").strip().splitlines()) == 2
 
 
 def test_stats_and_reopen(tmp_path):
@@ -90,7 +135,7 @@ def test_stats_and_reopen(tmp_path):
     assert stats["written"] == 2
     assert stats["retries"] >= 0
     w.close()
-    lines = path.read_text().strip().splitlines()
+    lines = path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 3
 
 
@@ -122,4 +167,4 @@ def test_rotate_disabled(tmp_path):
     w.close()
     assert not (tmp_path / "signals-2024-01-01.csv").exists()
     assert path.exists()
-    assert len(path.read_text().strip().splitlines()) == 3
+    assert len(path.read_text(encoding="utf-8").strip().splitlines()) == 3

@@ -127,7 +127,8 @@ class TestOCIImageBuilder:
         src.mkdir()
 
         (src / "__init__.py").write_text("# Package\n")
-        (src / "strategy.py").write_text('''
+        (src / "strategy.py").write_text(
+            '''
 """Test strategy."""
 class TestStrategy:
     """Simple test strategy."""
@@ -136,7 +137,8 @@ class TestStrategy:
 
     def run(self):
         return {"status": "ok"}
-''')
+'''
+        )
         return src
 
     def test_builder_initialization(self):
@@ -187,11 +189,11 @@ class TestStrategy:
         assert (result.output_dir / "blobs" / "sha256").exists()
 
         # Check oci-layout content
-        oci_layout = json.loads((result.output_dir / "oci-layout").read_text())
+        oci_layout = json.loads((result.output_dir / "oci-layout").read_text(encoding="utf-8"))
         assert oci_layout["imageLayoutVersion"] == "1.0.0"
 
         # Check index.json
-        index = json.loads((result.output_dir / "index.json").read_text())
+        index = json.loads((result.output_dir / "index.json").read_text(encoding="utf-8"))
         assert index["schemaVersion"] == 2
         assert len(index["manifests"]) == 1
 
@@ -240,7 +242,9 @@ class TestStrategy:
         assert len(result.layers) >= 2
 
         # Check that deps layer has correct annotation
-        deps_layer = [l for l in result.layers if l.annotations.get("io.ccea.layer.type") == "dependencies"]
+        deps_layer = [
+            l for l in result.layers if l.annotations.get("io.ccea.layer.type") == "dependencies"
+        ]
         assert len(deps_layer) == 1
 
     def test_image_labels(self, sample_source, tmp_path):
@@ -259,13 +263,13 @@ class TestStrategy:
         result = builder.build(config)
 
         # Check index.json has annotations
-        index = json.loads((result.output_dir / "index.json").read_text())
+        index = json.loads((result.output_dir / "index.json").read_text(encoding="utf-8"))
         manifest_ref = index["manifests"][0]
 
         # Read manifest
         manifest_hash = manifest_ref["digest"].split(":")[1]
         manifest_path = result.output_dir / "blobs" / "sha256" / manifest_hash
-        manifest = json.loads(manifest_path.read_text())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
         assert "env" in manifest["annotations"]
         assert manifest["annotations"]["env"] == "test"

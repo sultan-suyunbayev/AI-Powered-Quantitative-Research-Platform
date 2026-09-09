@@ -70,9 +70,7 @@ class PositionState:
         if isinstance(other, PositionState):
             return (
                 math.isclose(self.qty, other.qty, rel_tol=1e-12, abs_tol=1e-12)
-                and math.isclose(
-                    self.avg_price, other.avg_price, rel_tol=1e-12, abs_tol=1e-12
-                )
+                and math.isclose(self.avg_price, other.avg_price, rel_tol=1e-12, abs_tol=1e-12)
                 and self.last_update_ms == other.last_update_ms
             )
         if isinstance(other, (int, float)):
@@ -302,9 +300,7 @@ class TradingState:
             open_orders=orders,
             cash=_coerce_float(data.get("cash")),
             equity=(
-                float(data.get("equity"))
-                if isinstance(data.get("equity"), (int, float))
-                else None
+                float(data.get("equity")) if isinstance(data.get("equity"), (int, float)) else None
             ),
             last_processed_bar_ms=last_processed,
             seen_signals=_ensure_list(data.get("seen_signals")),
@@ -321,9 +317,7 @@ class TradingState:
         )
 
         leftovers = {
-            str(key): copy.deepcopy(value)
-            for key, value in data.items()
-            if key not in known_keys
+            str(key): copy.deepcopy(value) for key, value in data.items() if key not in known_keys
         }
         if leftovers:
             state.metadata.setdefault("_legacy", {}).update(leftovers)
@@ -441,12 +435,18 @@ class JsonBackend:
                 fh.flush()
                 os.fsync(fh.fileno())
             os.replace(tmp_path, path)
-            with suppress(OSError):
-                dir_fd = os.open(str(path.parent), os.O_DIRECTORY)
-                try:
-                    os.fsync(dir_fd)
-                finally:
-                    os.close(dir_fd)
+            # Fsyncing the directory is a POSIX durability step with no Windows
+            # equivalent: os.O_DIRECTORY does not exist there, and the
+            # AttributeError that raised is not an OSError, so it escaped this
+            # suppression and took the whole save with it.
+            dir_flag = getattr(os, "O_DIRECTORY", None)
+            if dir_flag is not None:
+                with suppress(OSError):
+                    dir_fd = os.open(str(path.parent), dir_flag)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
         except Exception:
             logger.warning("Failed to persist JSON state to %s", path, exc_info=True)
             with suppress(Exception):
@@ -508,6 +508,7 @@ class SQLiteBackend:
         try:
             con.execute("PRAGMA journal_mode=WAL;")
             self._ensure_schema(con)
+            # nosemgrep: sql-injection-format-string -- TABLE is a class constant
             cur = con.execute(f"SELECT * FROM {self.TABLE} WHERE id = 1")
             row = cur.fetchone()
         finally:
@@ -515,6 +516,7 @@ class SQLiteBackend:
         if not row:
             return TradingState()
         keys = set(row.keys())
+
         def _load_json(value: Any, default: Any) -> Any:
             if value is None:
                 return default
@@ -532,9 +534,7 @@ class SQLiteBackend:
                 return default
 
         raw_last_processed = (
-            row["last_processed_bar_ms"]
-            if "last_processed_bar_ms" in keys
-            else None
+            row["last_processed_bar_ms"] if "last_processed_bar_ms" in keys else None
         )
         if isinstance(raw_last_processed, (bytes, bytearray)):
             try:
@@ -566,9 +566,15 @@ class SQLiteBackend:
             "entry_limits": json.loads(row["entry_limits"] or "{}"),
             "last_prices": json.loads(row["last_prices"] or "{}"),
             "exposure_state": json.loads(row["exposure_state"] or "{}"),
-            "total_notional": row["total_notional"] if "total_notional" in keys and row["total_notional"] is not None else 0.0,
+            "total_notional": (
+                row["total_notional"]
+                if "total_notional" in keys and row["total_notional"] is not None
+                else 0.0
+            ),
             "git_hash": row["git_hash"] if "git_hash" in keys else None,
-            "version": row["version"] if "version" in keys and row["version"] else CURRENT_STATE_VERSION,
+            "version": (
+                row["version"] if "version" in keys and row["version"] else CURRENT_STATE_VERSION
+            ),
             "metadata": json.loads(row["metadata"] or "{}") if "metadata" in keys else {},
             "last_update_ms": row["last_update_ms"] if "last_update_ms" in keys else None,
         }
@@ -665,6 +671,7 @@ def update_open_order(
     if not key:
         raise ValueError("order_key must be non-empty")
     with _state_lock:
+
         def _matches(order: OrderState, needle: str) -> bool:
             if not needle:
                 return False
@@ -684,9 +691,7 @@ def update_open_order(
             payload.update(kwargs)
             if not payload:
                 _state.open_orders = [
-                    existing
-                    for existing in _state.open_orders
-                    if not _matches(existing, key)
+                    existing for existing in _state.open_orders if not _matches(existing, key)
                 ]
                 _state.version = CURRENT_STATE_VERSION
                 return
@@ -702,9 +707,7 @@ def update_open_order(
         _state.open_orders = [
             existing
             for existing in _state.open_orders
-            if not any(
-                _matches(existing, ident) for ident in identifiers if ident
-            )
+            if not any(_matches(existing, ident) for ident in identifiers if ident)
         ]
         _state.open_orders.append(order)
         _state.version = CURRENT_STATE_VERSION
@@ -721,12 +724,27 @@ def _file_lock(lock_path: Path | str):
     with path.open("w") as lock_file:
         try:
             import fcntl
+        except ModuleNotFoundError:
+            # No fcntl on Windows. msvcrt.locking on a one-byte range is the
+            # equivalent exclusive lock. The import used to be unguarded, so
+            # save_state() raised ModuleNotFoundError there and no state could
+            # be persisted at all.
+            import msvcrt
 
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                with suppress(Exception):
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            yield
-        finally:
-            with suppress(Exception):
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            try:
+                yield
+            finally:
+                with suppress(Exception):
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _rotate_backups(path: Path, keep: int, *, create_new: bool) -> None:

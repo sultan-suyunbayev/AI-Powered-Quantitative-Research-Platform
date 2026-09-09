@@ -1,6 +1,7 @@
 import math
 from decimal import Decimal
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -42,7 +43,9 @@ def test_feature_pipe_tracks_returns_sigma_and_warmup():
 
     expected_returns = [0.01, 102.0 / 101.0 - 1.0]
     expected_mean = sum(expected_returns) / len(expected_returns)
-    expected_var = sum((r - expected_mean) ** 2 for r in expected_returns) / (len(expected_returns) - 1)
+    expected_var = sum((r - expected_mean) ** 2 for r in expected_returns) / (
+        len(expected_returns) - 1
+    )
     expected_sigma = math.sqrt(expected_var)
     expected_tr = [
         max(101.0 - 101.0, abs(101.0 - 100.0), abs(101.0 - 100.0)) / 100.0,
@@ -91,9 +94,9 @@ def test_make_targets_no_turnover_data_leaves_returns_unchanged():
         costs=SpotCostConfig(taker_fee_bps=5.0),
     )
 
-    expected = (
-        df.groupby("symbol")["price"].shift(-1).div(df["price"]) - 1.0
-    ).rename("target")
+    # make_targets uses LOG returns, to match the features (see CRITICAL FIX #3
+    # in feature_pipe): ln(P_next / P) rather than P_next / P - 1.
+    expected = (np.log(df.groupby("symbol")["price"].shift(-1).div(df["price"]))).rename("target")
 
     result = pipe.make_targets(df)
 
@@ -122,9 +125,8 @@ def test_make_targets_scales_costs_with_turnover_fraction():
         ),
     )
 
-    raw = (
-        df.groupby("symbol")["price"].shift(-1).div(df["price"]) - 1.0
-    ).rename("target")
+    # Log returns, as make_targets uses; costs are then subtracted additively.
+    raw = np.log(df.groupby("symbol")["price"].shift(-1).div(df["price"])).rename("target")
     result = pipe.make_targets(df)
 
     assert result is not None

@@ -25,6 +25,7 @@ in all loss and explained variance computations.
 """
 
 import pytest
+
 torch = pytest.importorskip("torch")
 import numpy as np
 from unittest.mock import Mock, patch, MagicMock
@@ -214,9 +215,11 @@ class TestPPOTargetUnclipped:
         """
         # Simulated values
         V_pred = torch.tensor([8.0])  # Current prediction
-        V_old = torch.tensor([5.0])   # Old prediction
-        V_targ_unclipped = torch.tensor([10.0])  # True target (unclipped)
-        V_targ_clipped = torch.tensor([5.0])     # Wrongly clipped target
+        V_old = torch.tensor([5.0])  # Old prediction
+        # 12, not 10: at 10 the two formulations happen to give the same max
+        # (4 vs 9 against 9 vs 4), and the test below asserts they differ.
+        V_targ_unclipped = torch.tensor([12.0])  # True target (unclipped)
+        V_targ_clipped = torch.tensor([5.0])  # Wrongly clipped target
         epsilon = 2.0
 
         # Correct implementation
@@ -236,19 +239,16 @@ class TestPPOTargetUnclipped:
         # Correct loss should be larger (target is further from prediction)
         assert loss_correct.item() > loss_wrong.item()
 
-        # Calculate expected values
-        # V_pred = 8.0, V_targ_unclipped = 10.0
-        # loss_unclipped = (8-10)^2 = 4
-        # V_pred_clipped = clamp(8, 3, 7) = 7
-        # loss_clipped = (7-10)^2 = 9
-        # loss = max(4, 9) = 9
-        assert loss_correct.item() == pytest.approx(9.0)
+        # Correct: V_pred = 8, V_targ_unclipped = 12, V_pred_clipped = clamp(8, 3, 7) = 7
+        #   loss_unclipped = (8-12)^2 = 16
+        #   loss_clipped   = (7-12)^2 = 25
+        #   loss = max(16, 25) = 25
+        assert loss_correct.item() == pytest.approx(25.0)
 
-        # Wrong calculation:
-        # loss_unclipped = (8-5)^2 = 9
-        # loss_clipped = (7-5)^2 = 4
-        # loss = max(9, 4) = 9
-        # In this case they're the same, but generally they differ
+        # Wrong (clipping the TARGET instead of the prediction):
+        #   loss_unclipped = (8-5)^2 = 9
+        #   loss_clipped   = (7-5)^2 = 4
+        #   loss = max(9, 4) = 9
         assert loss_wrong.item() == pytest.approx(9.0)
 
     def test_gradient_impact(self):

@@ -51,11 +51,24 @@ cdef void _shuffle_events(vector[MicroEvent]& events, vector[unsigned char]& sou
         sources[j] = tmp_source
 
 def _compute_n_features() -> int:
-    """Вспомогательная функция для подсчёта длины вектора признаков."""
-    cdef int max_tokens = 1      # максимальное число токенов (подгоните при необходимости)
+    """Вспомогательная функция для подсчёта длины вектора признаков.
+
+    The probe must use the SAME external width the production path feeds the
+    builder (``Mediator._extract_norm_cols`` -> ``feature_config.EXT_NORM_DIM``).
+    It used to hard-code 21 while the mediator had grown to 35, so this returned
+    85 where the real vector is 113 — and since TradingEnv sizes its
+    observation_space from here, and Mediator._build_observation allocates
+    ``np.zeros(observation_space.shape)``, every step wrote 31 floats past the
+    end of that array. obs_builder writes through memoryviews with bounds
+    checking off, so nothing raised: it silently corrupted the heap.
+    """
+    import feature_config as _fc
+
+    cdef int max_tokens = int(_fc.MAX_NUM_TOKENS)
     cdef int num_tokens = 1
-    norm_cols = np.zeros(21, dtype=np.float32)  # 21 external columns for 4h timeframe (see mediator.py:1018-1051 for full list)
-    norm_cols_validity = np.ones(21, dtype=np.uint8)  # All valid by default for feature counting
+    cdef int ext_dim = int(_fc.EXT_NORM_DIM)
+    norm_cols = np.zeros(ext_dim, dtype=np.float32)
+    norm_cols_validity = np.ones(ext_dim, dtype=np.uint8)  # All valid by default for feature counting
     # выделяем буфер заведомо большей длины
     buf = np.empty(256, dtype=np.float32)
     buf.fill(np.nan)
@@ -608,14 +621,14 @@ cpdef tuple run_full_step_logic_cython(
     cdef char[::1] taker_is_agent_all_arr = workspace.taker_is_agent_all_arr
     cdef long long[::1] fully_executed_ids_all_arr = workspace.fully_executed_ids_all_arr
     
-    assert prices_all_arr.c_contiguous, "Workspace prices_all_arr must be C-contiguous"
-    assert volumes_all_arr.c_contiguous, "Workspace volumes_all_arr must be C-contiguous"
-    assert maker_ids_all_arr.c_contiguous, "Workspace maker_ids_all_arr must be C-contiguous"
-    assert maker_is_agent_all_arr.c_contiguous, "Workspace maker_is_agent_all_arr must be C-contiguous"
-    assert timestamps_all_arr.c_contiguous, "Workspace timestamps_all_arr must be C-contiguous"
-    assert is_buy_side_all_arr.c_contiguous, "Workspace is_buy_side_all_arr must be C-contiguous"
-    assert taker_is_agent_all_arr.c_contiguous, "Workspace taker_is_agent_all_arr must be C-contiguous"
-    assert fully_executed_ids_all_arr.c_contiguous, "Workspace fully_executed_ids_all_arr must be C-contiguous"
+    assert prices_all_arr.is_c_contig(), "Workspace prices_all_arr must be C-contiguous"
+    assert volumes_all_arr.is_c_contig(), "Workspace volumes_all_arr must be C-contiguous"
+    assert maker_ids_all_arr.is_c_contig(), "Workspace maker_ids_all_arr must be C-contiguous"
+    assert maker_is_agent_all_arr.is_c_contig(), "Workspace maker_is_agent_all_arr must be C-contiguous"
+    assert timestamps_all_arr.is_c_contig(), "Workspace timestamps_all_arr must be C-contiguous"
+    assert is_buy_side_all_arr.is_c_contig(), "Workspace is_buy_side_all_arr must be C-contiguous"
+    assert taker_is_agent_all_arr.is_c_contig(), "Workspace taker_is_agent_all_arr must be C-contiguous"
+    assert fully_executed_ids_all_arr.is_c_contig(), "Workspace fully_executed_ids_all_arr must be C-contiguous"
     
     # ==============================================================
     # 1. ФАЗА ПРЕДЛОЖЕНИЯ (PROPOSE)

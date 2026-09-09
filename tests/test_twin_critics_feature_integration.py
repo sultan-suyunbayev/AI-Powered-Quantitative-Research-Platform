@@ -11,8 +11,10 @@ Tests Twin Critics integration with:
 """
 
 import pytest
+
 torch = pytest.importorskip("torch")
 import numpy as np
+import gymnasium
 from gymnasium import spaces
 from stable_baselines3.common.vec_env import DummyVecEnv
 from custom_policy_patch1 import CustomActorCriticPolicy
@@ -21,10 +23,11 @@ import tempfile
 import os
 
 
-class SimpleDummyEnv:
+class SimpleDummyEnv(gymnasium.Env):
     """Simple test environment."""
 
     def __init__(self):
+        super().__init__()
         self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(10,), dtype=np.float32)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
         self.steps = 0
@@ -56,27 +59,23 @@ class TestVGSIntegration:
     def test_twin_critics_with_vgs_enabled(self, env):
         """Test that Twin Critics works with VGS enabled."""
         arch_params = {
-            'hidden_dim': 32,
-            'lstm_hidden_size': 32,
-            'critic': {
-                'distributional': True,
-                'num_quantiles': 8,
+            "hidden_dim": 32,
+            "lstm_hidden_size": 32,
+            "critic": {
+                "distributional": True,
+                "num_quantiles": 8,
                 # Twin Critics enabled by default
-            }
-        }
-
-        vgs_config = {
-            'enabled': True,
-            'beta': 0.99,
-            'alpha': 0.1,
-            'warmup_steps': 10,
+            },
         }
 
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
-            vgs_config=vgs_config,
+            policy_kwargs={"arch_params": arch_params},
+            variance_gradient_scaling=True,
+            vgs_beta=0.99,
+            vgs_alpha=0.1,
+            vgs_warmup_steps=10,
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -86,7 +85,7 @@ class TestVGSIntegration:
 
         # Both features should be enabled
         assert model.policy._use_twin_critics is True
-        assert hasattr(model, '_vgs')
+        assert model._vgs_enabled is True
 
         # Should train successfully
         model.learn(total_timesteps=128)
@@ -97,22 +96,21 @@ class TestVGSIntegration:
     def test_twin_critics_vgs_disabled(self, env):
         """Test Twin Critics with VGS explicitly disabled."""
         arch_params = {
-            'hidden_dim': 32,
-            'critic': {
-                'distributional': True,
-                'num_quantiles': 8,
-            }
-        }
-
-        vgs_config = {
-            'enabled': False,
+            "hidden_dim": 32,
+            "critic": {
+                "distributional": True,
+                "num_quantiles": 8,
+            },
         }
 
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
-            vgs_config=vgs_config,
+            policy_kwargs={"arch_params": arch_params},
+            variance_gradient_scaling=False,
+            vgs_beta=0.99,
+            vgs_alpha=0.1,
+            vgs_warmup_steps=100,
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -138,17 +136,16 @@ class TestLSTMConfigurations:
 
         for size in lstm_sizes:
             arch_params = {
-                'hidden_dim': size,
-                'lstm_hidden_size': size,
-                'critic': {
-                    'distributional': True,
-                    'num_quantiles': 16,
-                }
+                "hidden_dim": size,
+                "lstm_hidden_size": size,
+                "critic": {
+                    "distributional": True,
+                    "num_quantiles": 16,
+                },
             }
 
             policy = CustomActorCriticPolicy(
-                obs_space, act_space, lambda x: 0.001,
-                arch_params=arch_params
+                obs_space, act_space, lambda x: 0.001, arch_params=arch_params
             )
 
             # Twin Critics enabled
@@ -170,33 +167,31 @@ class TestLSTMConfigurations:
 
         # Shared LSTM
         arch_params_shared = {
-            'hidden_dim': 32,
-            'lstm_hidden_size': 32,
-            'critic': {
-                'distributional': True,
-                'num_quantiles': 16,
-            }
+            "hidden_dim": 32,
+            "lstm_hidden_size": 32,
+            "critic": {
+                "distributional": True,
+                "num_quantiles": 16,
+            },
         }
 
         policy_shared = CustomActorCriticPolicy(
-            obs_space, act_space, lambda x: 0.001,
-            arch_params=arch_params_shared
+            obs_space, act_space, lambda x: 0.001, arch_params=arch_params_shared
         )
 
         # Separate critic LSTM
         arch_params_separate = {
-            'hidden_dim': 32,
-            'lstm_hidden_size': 32,
-            'enable_critic_lstm': True,
-            'critic': {
-                'distributional': True,
-                'num_quantiles': 16,
-            }
+            "hidden_dim": 32,
+            "lstm_hidden_size": 32,
+            "enable_critic_lstm": True,
+            "critic": {
+                "distributional": True,
+                "num_quantiles": 16,
+            },
         }
 
         policy_separate = CustomActorCriticPolicy(
-            obs_space, act_space, lambda x: 0.001,
-            arch_params=arch_params_separate
+            obs_space, act_space, lambda x: 0.001, arch_params=arch_params_separate
         )
 
         # Both should have Twin Critics
@@ -217,8 +212,10 @@ class TestObservationActionSpaces:
             obs_space = spaces.Box(-1.0, 1.0, shape, np.float32)
 
             policy = CustomActorCriticPolicy(
-                obs_space, act_space, lambda x: 0.001,
-                arch_params={'critic': {'distributional': True, 'num_quantiles': 16}}
+                obs_space,
+                act_space,
+                lambda x: 0.001,
+                arch_params={"critic": {"distributional": True, "num_quantiles": 16}},
             )
 
             assert policy._use_twin_critics is True
@@ -239,8 +236,10 @@ class TestObservationActionSpaces:
             obs_space = spaces.Box(low, high, (10,), np.float32)
 
             policy = CustomActorCriticPolicy(
-                obs_space, act_space, lambda x: 0.001,
-                arch_params={'critic': {'distributional': True, 'num_quantiles': 16}}
+                obs_space,
+                act_space,
+                lambda x: 0.001,
+                arch_params={"critic": {"distributional": True, "num_quantiles": 16}},
             )
 
             assert policy._use_twin_critics is True
@@ -256,14 +255,16 @@ class TestSaveLoadScenarios:
 
         # Create policy with default (Twin Critics enabled)
         policy1 = CustomActorCriticPolicy(
-            obs_space, act_space, lambda x: 0.001,
-            arch_params={'critic': {'distributional': True, 'num_quantiles': 16}}
+            obs_space,
+            act_space,
+            lambda x: 0.001,
+            arch_params={"critic": {"distributional": True, "num_quantiles": 16}},
         )
 
         assert policy1._use_twin_critics is True
 
         # Save
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pth') as f:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pth") as f:
             temp_path = f.name
 
         try:
@@ -271,14 +272,16 @@ class TestSaveLoadScenarios:
 
             # Load into new policy
             policy2 = CustomActorCriticPolicy(
-                obs_space, act_space, lambda x: 0.001,
-                arch_params={'critic': {'distributional': True, 'num_quantiles': 16}}
+                obs_space,
+                act_space,
+                lambda x: 0.001,
+                arch_params={"critic": {"distributional": True, "num_quantiles": 16}},
             )
 
             policy2.load_state_dict(torch.load(temp_path))
 
             # Both critics should load correctly
-            latent = torch.randn(4, 32)
+            latent = torch.randn(4, policy1.hidden_dim)
             out1_before, out2_before = policy1._get_twin_value_logits(latent)
             out1_after, out2_after = policy2._get_twin_value_logits(latent)
 
@@ -296,12 +299,16 @@ class TestSaveLoadScenarios:
 
         # Create old-style single critic model
         policy_old = CustomActorCriticPolicy(
-            obs_space, act_space, lambda x: 0.001,
-            arch_params={'critic': {'distributional': True, 'num_quantiles': 16, 'use_twin_critics': False}}
+            obs_space,
+            act_space,
+            lambda x: 0.001,
+            arch_params={
+                "critic": {"distributional": True, "num_quantiles": 16, "use_twin_critics": False}
+            },
         )
 
         # Save
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pth') as f:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pth") as f:
             temp_path = f.name
 
         try:
@@ -309,8 +316,10 @@ class TestSaveLoadScenarios:
 
             # Load into new policy with default Twin Critics
             policy_new = CustomActorCriticPolicy(
-                obs_space, act_space, lambda x: 0.001,
-                arch_params={'critic': {'distributional': True, 'num_quantiles': 16}}
+                obs_space,
+                act_space,
+                lambda x: 0.001,
+                arch_params={"critic": {"distributional": True, "num_quantiles": 16}},
                 # use_twin_critics defaults to True
             )
 
@@ -319,10 +328,10 @@ class TestSaveLoadScenarios:
 
             # Should have missing keys for second critic
             assert len(result.missing_keys) > 0
-            assert any('quantile_head_2' in k or '_2' in k for k in result.missing_keys)
+            assert any("quantile_head_2" in k or "_2" in k for k in result.missing_keys)
 
             # First critic should work
-            latent = torch.randn(4, 32)
+            latent = torch.randn(4, policy_new.hidden_dim)
             logits = policy_new._get_value_logits(latent)
             assert logits.shape == (4, 16)
 
@@ -341,17 +350,17 @@ class TestTrainingStability:
     def test_training_completes_without_errors(self, env):
         """Test that training completes without errors."""
         arch_params = {
-            'hidden_dim': 32,
-            'critic': {
-                'distributional': True,
-                'num_quantiles': 8,
-            }
+            "hidden_dim": 32,
+            "critic": {
+                "distributional": True,
+                "num_quantiles": 8,
+            },
         }
 
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=3,
@@ -367,17 +376,17 @@ class TestTrainingStability:
     def test_no_nan_values_during_training(self, env):
         """Test that no NaN values appear during training."""
         arch_params = {
-            'hidden_dim': 32,
-            'critic': {
-                'distributional': True,
-                'num_quantiles': 8,
-            }
+            "hidden_dim": 32,
+            "critic": {
+                "distributional": True,
+                "num_quantiles": 8,
+            },
         }
 
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=2,
@@ -395,17 +404,17 @@ class TestTrainingStability:
     def test_both_critics_converge_similarly(self, env):
         """Test that both critics converge to similar values."""
         arch_params = {
-            'hidden_dim': 32,
-            'critic': {
-                'distributional': True,
-                'num_quantiles': 8,
-            }
+            "hidden_dim": 32,
+            "critic": {
+                "distributional": True,
+                "num_quantiles": 8,
+            },
         }
 
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params=arch_params,
+            policy_kwargs={"arch_params": arch_params},
             n_steps=64,
             batch_size=32,
             n_epochs=5,
@@ -424,8 +433,10 @@ class TestTrainingStability:
         with torch.no_grad():
             features = model.policy.extract_features(obs, model.policy.vf_features_extractor)
             latent_vf, _ = model.policy._process_sequence(
-                features, lstm_states.vf, episode_starts,
-                model.policy.lstm_critic or model.policy.lstm_actor
+                features,
+                lstm_states.vf,
+                episode_starts,
+                model.policy.lstm_critic or model.policy.lstm_actor,
             )
             latent_vf = model.policy.mlp_extractor.forward_critic(latent_vf)
 
@@ -453,9 +464,11 @@ class TestDefaultBehaviorIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params={
-                'hidden_dim': 32,
-                'critic': {'distributional': True, 'num_quantiles': 8}
+            policy_kwargs={
+                "arch_params": {
+                    "hidden_dim": 32,
+                    "critic": {"distributional": True, "num_quantiles": 8},
+                }
             },
             n_steps=64,
             batch_size=32,
@@ -478,7 +491,7 @@ class TestDefaultBehaviorIntegration:
         model = DistributionalPPO(
             CustomActorCriticPolicy,
             env,
-            arch_params={'hidden_dim': 32, 'critic': {}},
+            policy_kwargs={"arch_params": {"hidden_dim": 32, "critic": {}}},
             n_steps=64,
             batch_size=32,
             n_epochs=2,

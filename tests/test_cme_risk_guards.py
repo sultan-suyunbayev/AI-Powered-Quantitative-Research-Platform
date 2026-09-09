@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from datetime import date, datetime, time as datetime_time, timedelta
+from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
@@ -88,6 +88,7 @@ from services.cme_risk_guards import (
 # =============================================================================
 # Test Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def es_contract_spec() -> FuturesContractSpec:
@@ -217,6 +218,7 @@ def sample_contract_specs(
 # Test Enums
 # =============================================================================
 
+
 class TestEnums:
     """Tests for enum definitions."""
 
@@ -275,6 +277,7 @@ class TestEnums:
 # Test Constants
 # =============================================================================
 
+
 class TestConstants:
     """Tests for constants."""
 
@@ -315,6 +318,7 @@ class TestConstants:
 # =============================================================================
 # Test Configuration Classes
 # =============================================================================
+
 
 class TestSPANMarginGuardConfig:
     """Tests for SPANMarginGuardConfig."""
@@ -414,6 +418,7 @@ class TestRolloverGuardConfig:
 # =============================================================================
 # Test Result Classes
 # =============================================================================
+
 
 class TestMarginCheckResult:
     """Tests for MarginCheckResult."""
@@ -516,6 +521,7 @@ class TestMarginCallEvent:
 # =============================================================================
 # Test SPANMarginGuard
 # =============================================================================
+
 
 class TestSPANMarginGuard:
     """Tests for SPANMarginGuard."""
@@ -707,6 +713,7 @@ class TestSPANMarginGuard:
 # Test CMEPositionLimitGuard
 # =============================================================================
 
+
 class TestCMEPositionLimitGuard:
     """Tests for CMEPositionLimitGuard."""
 
@@ -809,6 +816,7 @@ class TestCMEPositionLimitGuard:
 # Test CircuitBreakerAwareGuard
 # =============================================================================
 
+
 class TestCircuitBreakerAwareGuard:
     """Tests for CircuitBreakerAwareGuard."""
 
@@ -828,10 +836,12 @@ class TestCircuitBreakerAwareGuard:
         guard = CircuitBreakerAwareGuard()
         guard.add_symbol("ES")
         guard.add_symbol("NQ")
-        guard.set_reference_prices({
-            "ES": Decimal("4500"),
-            "NQ": Decimal("15000"),
-        })
+        guard.set_reference_prices(
+            {
+                "ES": Decimal("4500"),
+                "NQ": Decimal("15000"),
+            }
+        )
         assert guard._reference_prices["ES"] == Decimal("4500")
         assert guard._reference_prices["NQ"] == Decimal("15000")
 
@@ -862,7 +872,10 @@ class TestCircuitBreakerAwareGuard:
             is_rth=True,
         )
         # Circuit breaker should be triggered
-        assert result.circuit_breaker_level in (CircuitBreakerLevel.LEVEL_1, CircuitBreakerLevel.NONE)
+        assert result.circuit_breaker_level in (
+            CircuitBreakerLevel.LEVEL_1,
+            CircuitBreakerLevel.NONE,
+        )
 
     def test_check_trading_allowed_non_equity(self) -> None:
         """Test non-equity products always allowed."""
@@ -904,6 +917,7 @@ class TestCircuitBreakerAwareGuard:
 # Test SettlementRiskGuard
 # =============================================================================
 
+
 class TestSettlementRiskGuard:
     """Tests for SettlementRiskGuard."""
 
@@ -918,7 +932,9 @@ class TestSettlementRiskGuard:
         # Use a timestamp far from settlement time
         result = guard.check_settlement_risk(
             symbol="ES",
-            timestamp_ms=int(datetime(2025, 1, 15, 14, 0).timestamp() * 1000),  # 2 PM UTC
+            timestamp_ms=int(
+                datetime(2025, 1, 15, 14, 0, tzinfo=timezone.utc).timestamp() * 1000
+            ),  # 2 PM UTC
         )
         # Should be some level based on time distance
         assert result.settlement_time is not None
@@ -960,6 +976,7 @@ class TestSettlementRiskGuard:
 # =============================================================================
 # Test RolloverGuard
 # =============================================================================
+
 
 class TestRolloverGuard:
     """Tests for RolloverGuard."""
@@ -1042,6 +1059,7 @@ class TestRolloverGuard:
 # =============================================================================
 # Test CMEFuturesRiskGuard (Unified)
 # =============================================================================
+
 
 class TestCMEFuturesRiskGuard:
     """Tests for unified CMEFuturesRiskGuard."""
@@ -1193,6 +1211,7 @@ class TestCMEFuturesRiskGuard:
 # Test Factory Functions
 # =============================================================================
 
+
 class TestFactoryFunctions:
     """Tests for factory functions."""
 
@@ -1285,6 +1304,7 @@ class TestFactoryFunctions:
 # Test Thread Safety
 # =============================================================================
 
+
 class TestThreadSafety:
     """Tests for thread safety."""
 
@@ -1363,6 +1383,7 @@ class TestThreadSafety:
 # Test Edge Cases
 # =============================================================================
 
+
 class TestEdgeCases:
     """Tests for edge cases."""
 
@@ -1437,6 +1458,7 @@ class TestEdgeCases:
 # Test Integration Scenarios
 # =============================================================================
 
+
 class TestIntegrationScenarios:
     """Tests for integration scenarios."""
 
@@ -1493,7 +1515,7 @@ class TestIntegrationScenarios:
         # Positions: 5 ES (~$1.1M notional) + 3 NQ (~$0.9M notional) = ~$2M
         # At 5% margin: ~$100K required
         # Use $500K equity to ensure healthy margin
-        morning_ts = int(datetime(2025, 1, 15, 10, 0).timestamp() * 1000)
+        morning_ts = int(datetime(2025, 1, 15, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)
         event1 = guard.check_trade(
             symbol="ES",
             side="LONG",
@@ -1624,6 +1646,7 @@ class TestIntegrationScenarios:
 # Test Risk Summary
 # =============================================================================
 
+
 class TestRiskSummary:
     """Tests for risk summary functionality."""
 
@@ -1698,7 +1721,13 @@ class TestRiskSummary:
         )
 
         # With no positions, should be healthy
-        assert summary["margin"]["status"] in ("healthy", "warning", "danger", "critical", "liquidation")
+        assert summary["margin"]["status"] in (
+            "healthy",
+            "warning",
+            "danger",
+            "critical",
+            "liquidation",
+        )
         assert summary["position_limit"]["within_limit"] is True
         assert summary["position_limit"]["current_position"] == 0
 
@@ -1706,6 +1735,7 @@ class TestRiskSummary:
 # =============================================================================
 # Additional Edge Case Tests
 # =============================================================================
+
 
 class TestAdditionalEdgeCases:
     """Additional edge case tests for complete coverage."""
@@ -1740,7 +1770,7 @@ class TestAdditionalEdgeCases:
         """Test settlement risk calculation crossing midnight."""
         guard = SettlementRiskGuard()
         # Late night UTC time
-        late_night_ts = int(datetime(2025, 1, 15, 23, 0).timestamp() * 1000)
+        late_night_ts = int(datetime(2025, 1, 15, 23, 0, tzinfo=timezone.utc).timestamp() * 1000)
         result = guard.check_settlement_risk(
             symbol="ES",
             timestamp_ms=late_night_ts,
@@ -1871,7 +1901,7 @@ class TestAdditionalEdgeCases:
         """Test settlement calculation when settlement is tomorrow."""
         guard = SettlementRiskGuard()
         # Late in day (23:00 UTC), settlement is next day
-        late_ts = int(datetime(2025, 1, 15, 23, 30).timestamp() * 1000)
+        late_ts = int(datetime(2025, 1, 15, 23, 30, tzinfo=timezone.utc).timestamp() * 1000)
         result = guard.check_settlement_risk(
             symbol="ES",
             timestamp_ms=late_ts,
@@ -1888,19 +1918,19 @@ class TestAdditionalEdgeCases:
                 block_new_positions_minutes=15,
             )
         )
-        # Set timestamp ~40 minutes before ES settlement (16:00 ET = 21:00 UTC)
-        # 40 minutes is between critical (30) and warn (60)
-        ts = int(datetime(2025, 1, 15, 20, 20).timestamp() * 1000)  # 20:20 UTC
+        # 40 minutes before ES settlement, which SETTLEMENT_TIMES_ET puts at
+        # 15:30 ET; the guard converts with a fixed UTC-5, so that is 20:30 UTC
+        # and the instant we want is 19:50 UTC. Built as an aware datetime:
+        # datetime(...).timestamp() reads a naive value as *local* time, so this
+        # only pointed where the comment said on a machine running UTC.
+        # 40 minutes is between critical (30) and warn (60).
+        ts = int(datetime(2025, 1, 15, 19, 50, tzinfo=timezone.utc).timestamp() * 1000)
         result = guard.check_settlement_risk(
             symbol="ES",
             timestamp_ms=ts,
         )
-        # Should be in APPROACHING level
-        assert result.risk_level in (
-            SettlementRiskLevel.APPROACHING,
-            SettlementRiskLevel.NORMAL,
-            SettlementRiskLevel.IMMINENT,
-        )
+        assert result.minutes_to_settlement == 40
+        assert result.risk_level is SettlementRiskLevel.APPROACHING
 
     def test_settlement_imminent_level(self) -> None:
         """Test settlement IMMINENT risk level - just verify result structure."""
@@ -1992,7 +2022,7 @@ class TestAdditionalEdgeCases:
         # Simulate velocity pause by having CB guard return velocity_paused
         with patch.object(
             guard._cb_guard,
-            'check_trading_allowed',
+            "check_trading_allowed",
             return_value=CircuitBreakerCheckResult(
                 can_trade=False,
                 trading_state=TradingState.VELOCITY_PAUSE,  # Correct enum value
@@ -2024,7 +2054,7 @@ class TestAdditionalEdgeCases:
 
         with patch.object(
             guard._margin_guard,
-            'check_margin',
+            "check_margin",
             return_value=MarginCheckResult(
                 status=MarginStatus.WARNING,
                 level=MarginCallLevel.WARNING,
@@ -2059,7 +2089,7 @@ class TestAdditionalEdgeCases:
 
         with patch.object(
             guard._settlement_guard,
-            'check_settlement_risk',
+            "check_settlement_risk",
             return_value=SettlementRiskCheckResult(
                 risk_level=SettlementRiskLevel.IMMINENT,
                 minutes_to_settlement=10,
@@ -2090,7 +2120,7 @@ class TestAdditionalEdgeCases:
 
         with patch.object(
             guard._settlement_guard,
-            'check_settlement_risk',
+            "check_settlement_risk",
             return_value=SettlementRiskCheckResult(
                 risk_level=SettlementRiskLevel.APPROACHING,
                 minutes_to_settlement=45,
@@ -2121,7 +2151,7 @@ class TestAdditionalEdgeCases:
 
         with patch.object(
             guard._rollover_guard,
-            'check_rollover_risk',
+            "check_rollover_risk",
             return_value=RolloverCheckResult(
                 risk_level=RolloverRiskLevel.EXPIRED,
                 days_to_roll=-1,
@@ -2152,7 +2182,7 @@ class TestAdditionalEdgeCases:
 
         with patch.object(
             guard._rollover_guard,
-            'check_rollover_risk',
+            "check_rollover_risk",
             return_value=RolloverCheckResult(
                 risk_level=RolloverRiskLevel.IMMINENT,
                 days_to_roll=1,
@@ -2183,7 +2213,7 @@ class TestAdditionalEdgeCases:
 
         with patch.object(
             guard._rollover_guard,
-            'check_rollover_risk',
+            "check_rollover_risk",
             return_value=RolloverCheckResult(
                 risk_level=RolloverRiskLevel.APPROACHING,
                 days_to_roll=3,
@@ -2234,7 +2264,7 @@ class TestAdditionalEdgeCases:
         )
         # Set timestamp to 23:00 UTC (after typical settlements)
         # ES settles at 15:30 ET = 20:30 UTC
-        late_ts = int(datetime(2025, 6, 15, 23, 0).timestamp() * 1000)
+        late_ts = int(datetime(2025, 6, 15, 23, 0, tzinfo=timezone.utc).timestamp() * 1000)
         result = guard.check_settlement_risk(
             symbol="ES",
             timestamp_ms=late_ts,
@@ -2254,14 +2284,16 @@ class TestAdditionalEdgeCases:
         # Mock the internal method to return specific minutes
         with patch.object(
             guard._engine,
-            'get_next_settlement_time',
+            "get_next_settlement_time",
             return_value=datetime_time(15, 30),
         ):
             # Test at a time that would give ~90 minutes to settlement
             # This should trigger APPROACHING level
             result = guard.check_settlement_risk(
                 symbol="ES",
-                timestamp_ms=int(datetime(2025, 6, 15, 19, 0).timestamp() * 1000),
+                timestamp_ms=int(
+                    datetime(2025, 6, 15, 19, 0, tzinfo=timezone.utc).timestamp() * 1000
+                ),
             )
             # Result should be valid
             assert result.risk_level in list(SettlementRiskLevel)
@@ -2279,7 +2311,7 @@ class TestAdditionalEdgeCases:
         # Mock to return a settlement time very close to current time
         with patch.object(
             guard,
-            'check_settlement_risk',
+            "check_settlement_risk",
             return_value=SettlementRiskCheckResult(
                 risk_level=SettlementRiskLevel.SETTLEMENT,
                 minutes_to_settlement=5,

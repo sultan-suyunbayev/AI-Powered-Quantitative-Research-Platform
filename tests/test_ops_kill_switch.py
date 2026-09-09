@@ -1,10 +1,13 @@
-import json, pathlib, sys
+import json
+import pathlib
+import sys
 
 # Ensure stdlib logging is used instead of local logging.py
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _orig_sys_path = list(sys.path)
 sys.path = [p for p in sys.path if p not in ("", str(REPO_ROOT))]
 import logging as std_logging  # type: ignore
+
 sys.modules["logging"] = std_logging
 sys.path = _orig_sys_path
 if str(REPO_ROOT) not in sys.path:
@@ -34,7 +37,7 @@ def test_tick_persists_state(tmp_path):
     ops_kill_switch.init(cfg)
     ops_kill_switch.record_error("rest")
     ops_kill_switch.tick()
-    data = json.loads(state.read_text())
+    data = json.loads(state.read_text(encoding="utf-8"))
     assert data["counters"]["rest"] == 1
     ops_kill_switch.manual_reset()
 
@@ -45,16 +48,24 @@ def test_reset_duplicates(tmp_path):
     cfg = {"flag_path": str(flag), "state_path": str(state)}
     ops_kill_switch.init(cfg)
     ops_kill_switch.record_duplicate()
-    assert json.loads(state.read_text())["counters"]["duplicates"] == 1
+    assert json.loads(state.read_text(encoding="utf-8"))["counters"]["duplicates"] == 1
     ops_kill_switch.reset_duplicates()
-    assert json.loads(state.read_text())["counters"]["duplicates"] == 0
+    assert json.loads(state.read_text(encoding="utf-8"))["counters"]["duplicates"] == 0
 
 
 def test_alert_command_runs_once(tmp_path):
     flag = tmp_path / "flag"
     state = tmp_path / "state.json"
     out = tmp_path / "out.txt"
-    cmd = ["bash", "-c", f'echo run >> "{out}"']
+    # No shell: bash is not dependable on a Windows runner, and a Windows path
+    # inside a double-quoted shell string is a run of backslash escapes. The
+    # path travels through argv instead.
+    cmd = [
+        sys.executable,
+        "-c",
+        "import sys; open(sys.argv[1], 'a', encoding='utf-8').write('run\\n')",
+        str(out),
+    ]
     cfg = {
         "flag_path": str(flag),
         "state_path": str(state),
@@ -63,12 +74,12 @@ def test_alert_command_runs_once(tmp_path):
     }
     ops_kill_switch.init(cfg)
     ops_kill_switch.record_error("rest")
-    assert out.read_text().strip() == "run"
+    assert out.read_text(encoding="utf-8").strip() == "run"
     ops_kill_switch.record_error("rest")
-    assert out.read_text().strip() == "run"
+    assert out.read_text(encoding="utf-8").strip() == "run"
     ops_kill_switch.manual_reset()
     ops_kill_switch.record_error("rest")
-    assert out.read_text().splitlines() == ["run", "run"]
+    assert out.read_text(encoding="utf-8").splitlines() == ["run", "run"]
     ops_kill_switch.manual_reset()
 
 

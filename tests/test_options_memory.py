@@ -18,6 +18,7 @@ import gc
 import gzip
 import json
 import os
+import pathlib
 import pickle
 import tempfile
 import threading
@@ -28,10 +29,12 @@ from typing import Dict, List, Optional, Set
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 pytest.importorskip("sortedcontainers")
 
 # Import Phase 0.5 components
 from lob.lazy_multi_series import (
+    _HMAC_SIGNATURE_LENGTH,
     EvictionPolicy,
     LazyMultiSeriesLOBManager,
     LOBMetadata,
@@ -68,6 +71,7 @@ from lob.data_structures import Side, OrderType, LimitOrder
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def temp_dir():
@@ -106,6 +110,7 @@ def event_coordinator():
 # =============================================================================
 # LazyMultiSeriesLOBManager Tests (20 tests)
 # =============================================================================
+
 
 class TestLazyMultiSeriesLOBManager:
     """Tests for LazyMultiSeriesLOBManager."""
@@ -443,6 +448,7 @@ class TestLazyMultiSeriesLOBManager:
 # RingBufferOrderBook Tests (15 tests)
 # =============================================================================
 
+
 class TestRingBufferOrderBook:
     """Tests for RingBufferOrderBook."""
 
@@ -737,6 +743,7 @@ class TestRingBufferOrderBook:
 # EventDrivenLOBCoordinator Tests (15 tests)
 # =============================================================================
 
+
 class TestEventDrivenLOBCoordinator:
     """Tests for EventDrivenLOBCoordinator."""
 
@@ -1000,6 +1007,7 @@ class TestEventDrivenLOBCoordinator:
 # Memory Benchmark Tests (10 tests)
 # =============================================================================
 
+
 class TestMemoryBenchmarks:
     """Tests for memory usage and benchmarks."""
 
@@ -1055,7 +1063,11 @@ class TestMemoryBenchmarks:
     def test_eviction_gc_pressure(self, temp_dir):
         """Test that eviction doesn't cause excessive GC pressure."""
         gc.collect()
-        initial_collections = gc.get_count()
+        # get_stats() counts collections per generation. get_count(), which this
+        # used to read, reports how many objects are *waiting* in each
+        # generation -- it resets on every sweep and climbs with any allocation
+        # in the process, so differencing it measures activity, not pressure.
+        initial_gen2 = gc.get_stats()[2]["collections"]
 
         manager = create_lazy_lob_manager(
             max_active_lobs=10,
@@ -1074,11 +1086,11 @@ class TestMemoryBenchmarks:
             )
 
         gc.collect()
-        final_collections = gc.get_count()
+        final_gen2 = gc.get_stats()[2]["collections"]
 
-        # GC should not be triggered excessively
-        # (This is a heuristic test)
-        assert final_collections[0] - initial_collections[0] < 20
+        # Evicting 90 of 100 LOBs should not drive repeated full collections.
+        # The explicit gc.collect() above accounts for one of them.
+        assert final_gen2 - initial_gen2 <= 2
 
     def test_memory_per_lob_estimate(self, temp_dir):
         """Test memory estimation per LOB."""
@@ -1256,6 +1268,7 @@ class TestMemoryBenchmarks:
 # Disk Persistence Tests (10 tests)
 # =============================================================================
 
+
 class TestDiskPersistence:
     """Tests for disk persistence functionality."""
 
@@ -1307,10 +1320,12 @@ class TestDiskPersistence:
         # Compressed file should exist
         assert os.path.exists(compressed_file)
 
-        # Should be valid gzip (binary pickle content)
-        with gzip.open(compressed_file, 'rb') as f:
-            content = f.read()
-            assert len(content) > 0
+        # File format is [gzip data][32-byte HMAC], so the trailer has to come
+        # off before decompressing -- gzip.open() over the whole file trips on it.
+        raw = pathlib.Path(compressed_file).read_bytes()
+        assert raw[:2] == bytes((0x1F, 0x8B)), "payload should be gzip"
+        content = gzip.decompress(raw[:-_HMAC_SIGNATURE_LENGTH])
+        assert len(content) > 0
 
     def test_restore_from_disk(self, temp_dir):
         """Test restoring LOB state from disk."""
@@ -1393,7 +1408,7 @@ class TestDiskPersistence:
 
         # Create corrupted file
         corrupt_file = os.path.join(temp_dir, f"{key}.lob.gz")
-        with open(corrupt_file, 'wb') as f:
+        with open(corrupt_file, "wb") as f:
             f.write(b"corrupted data")
 
         manager = create_lazy_lob_manager(
@@ -1428,7 +1443,7 @@ class TestDiskPersistence:
 
         # File should be complete (no temp files)
         files = os.listdir(temp_dir)
-        temp_files = [f for f in files if f.endswith('.tmp')]
+        temp_files = [f for f in files if f.endswith(".tmp")]
         assert len(temp_files) == 0
 
     def test_cleanup_old_files(self, temp_dir):
@@ -1476,10 +1491,7 @@ class TestDiskPersistence:
                 errors.append(e)
 
         threads = [
-            threading.Thread(
-                target=persist_worker,
-                args=(f"AAPL_241220_C_{190 + i * 5}",)
-            )
+            threading.Thread(target=persist_worker, args=(f"AAPL_241220_C_{190 + i * 5}",))
             for i in range(5)
         ]
 
@@ -1511,15 +1523,16 @@ class TestDiskPersistence:
 
         # Read and verify version info (pickle format with gzip compression)
         persist_file = os.path.join(temp_dir, f"{key}.lob.gz")
-        with gzip.open(persist_file, 'rb') as f:
+        with gzip.open(persist_file, "rb") as f:
             data = pickle.load(f)
-            assert 'version' in data
-            assert data['version'] >= 1
+            assert "version" in data
+            assert data["version"] >= 1
 
 
 # =============================================================================
 # Integration Tests
 # =============================================================================
+
 
 class TestIntegration:
     """Integration tests for Phase 0.5 components."""

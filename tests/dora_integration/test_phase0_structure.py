@@ -115,7 +115,7 @@ class TestPhase0InitFiles:
     def test_dora_integration_init_content(self, services_path: Path) -> None:
         """Verify services/dora_integration/__init__.py has required content."""
         init_path = services_path / "dora_integration" / "__init__.py"
-        content = init_path.read_text()
+        content = init_path.read_text(encoding="utf-8")
 
         # Check for required docstring elements
         assert "DORA Integration Layer" in content
@@ -131,7 +131,7 @@ class TestPhase0InitFiles:
     def test_due_diligence_init_content(self, services_path: Path) -> None:
         """Verify due_diligence/__init__.py has correct docstring."""
         init_path = services_path / "dora_integration" / "due_diligence" / "__init__.py"
-        content = init_path.read_text()
+        content = init_path.read_text(encoding="utf-8")
         assert "Due Diligence" in content or "Audit Readiness" in content
 
     def test_incident_interface_init_exists(self, services_path: Path) -> None:
@@ -142,7 +142,7 @@ class TestPhase0InitFiles:
     def test_incident_interface_init_content(self, services_path: Path) -> None:
         """Verify incident_interface/__init__.py has correct docstring."""
         init_path = services_path / "dora_integration" / "incident_interface" / "__init__.py"
-        content = init_path.read_text()
+        content = init_path.read_text(encoding="utf-8")
         assert "Incident" in content
         assert "We notify CLIENTS" in content or "Client" in content
 
@@ -174,7 +174,7 @@ class TestPhase0InitFiles:
     def test_archive_init_content(self, services_path: Path) -> None:
         """Verify archive __init__.py has correct docstring."""
         init_path = services_path / "archive" / "dora_financial_entity" / "__init__.py"
-        content = init_path.read_text()
+        content = init_path.read_text(encoding="utf-8")
         assert "Archived" in content
         assert "Financial Entity" in content or "FE" in content
 
@@ -186,6 +186,7 @@ class TestPhase0ImportCapability:
         """Verify services.dora_integration can be imported."""
         try:
             from services import dora_integration
+
             # Phase 8 complete - version is now 2.0.0
             assert dora_integration.__version__ == "2.0.0"
             # Phase 8 complete - migration_phase is now 8
@@ -197,6 +198,7 @@ class TestPhase0ImportCapability:
         """Verify services.dora_integration.due_diligence can be imported."""
         try:
             from services.dora_integration import due_diligence
+
             # Phase 1 complete - due_diligence now has exports
             assert len(due_diligence.__all__) > 0
         except ImportError as e:
@@ -206,6 +208,7 @@ class TestPhase0ImportCapability:
         """Verify services.dora_integration.incident_interface can be imported."""
         try:
             from services.dora_integration import incident_interface
+
             # Phase 2 complete - incident_interface now has exports
             assert len(incident_interface.__all__) > 0
         except ImportError as e:
@@ -215,6 +218,7 @@ class TestPhase0ImportCapability:
         """Verify services.dora_integration.third_party can be imported."""
         try:
             from services.dora_integration import third_party
+
             # Phase 3 complete - third_party now has 88 exports
             assert len(third_party.__all__) > 0
         except ImportError as e:
@@ -224,6 +228,7 @@ class TestPhase0ImportCapability:
         """Verify services.dora_integration.contracts can be imported."""
         try:
             from services.dora_integration import contracts
+
             # Phase 4 complete - contracts now has exports
             assert len(contracts.__all__) > 0
         except ImportError as e:
@@ -233,6 +238,7 @@ class TestPhase0ImportCapability:
         """Verify services.dora_integration.reporting can be imported."""
         try:
             from services.dora_integration import reporting
+
             # Phase 5 complete - reporting now has exports
             assert len(reporting.__all__) > 0
         except ImportError as e:
@@ -242,6 +248,7 @@ class TestPhase0ImportCapability:
         """Verify services.dora_integration.sharing can be imported."""
         try:
             from services.dora_integration import sharing
+
             # Phase 6 complete - sharing now has 29 exports
             assert len(sharing.__all__) > 0
             assert "DORAInformationSharing" in sharing.__all__
@@ -256,6 +263,7 @@ class TestPhase0ExistingCodeIntegrity:
         """Verify services.dora can still be imported."""
         try:
             from services import dora
+
             assert hasattr(dora, "__version__")
         except ImportError as e:
             pytest.fail(f"Failed to import existing dora module: {e}")
@@ -264,6 +272,7 @@ class TestPhase0ExistingCodeIntegrity:
         """Verify key exports from services.dora still work."""
         try:
             from services.dora import DORAScope, FunctionClassifier
+
             assert DORAScope is not None
             assert FunctionClassifier is not None
         except ImportError as e:
@@ -348,7 +357,7 @@ class TestPhase0MigrationChecklistComplete:
         audit_path = PROJECT_ROOT / "docs" / "migration" / "DORA_IMPORT_AUDIT_PHASE0.md"
         assert audit_path.exists(), "Import audit document missing"
 
-        content = audit_path.read_text()
+        content = audit_path.read_text(encoding="utf-8")
         # Check for key audit sections
         assert "Test File Imports" in content or "test_dora" in content
         assert "Integration Layer Modules" in content

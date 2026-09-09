@@ -1,24 +1,24 @@
 """
-Test suite for quantile levels formula mismatch (BUG #1)
+Quantile levels: the head and the CVaR computation must agree (regression, BUG #1)
 
-CRITICAL BUG: Mismatch between QuantileValueHead tau formula and CVaR computation assumptions.
+QuantileValueHead once used     τ_i = (2i+1)/(2*(N+1))
+while the CVaR computation assumed τ_i = (i+0.5)/N
 
-QuantileValueHead uses:     τ_i = (2i+1)/(2*(N+1))
-CVaR computation expects:   τ_i = (i+0.5)/N
+For N=21 that put τ₀ at 0.0227 instead of 0.0238 and τ₂₀ at 0.9318 instead of
+0.9762 — 4-5% out at both tails, which is exactly where CVaR looks. The head now
+uses the midpoint formula; these tests guard the agreement rather than
+documenting the gap.
 
-For N=21:
-- τ₀: 0.0227 (actual) vs 0.0238 (expected) → -4.6% difference
-- τ₂₀: 0.9318 (actual) vs 0.9762 (expected) → -4.5% difference
-
-This affects:
+Still covered:
 1. CVaR computation accuracy (especially for small α < 0.1)
-2. Quantile spacing (narrower at extremes)
+2. Quantile spacing
 3. Extrapolation logic in _cvar_from_quantiles
 """
 
 import math
 import numpy as np
 import pytest
+
 torch = pytest.importorskip("torch")
 import torch.nn as nn
 
@@ -28,8 +28,8 @@ from custom_policy_patch1 import QuantileValueHead
 class TestQuantileLevelsBug:
     """Test suite for quantile levels formula mismatch."""
 
-    def test_quantile_levels_formula_mismatch(self):
-        """Verify the quantile levels formula mismatch between QuantileValueHead and CVaR."""
+    def test_quantile_levels_match_cvar_assumption(self):
+        """The head's taus are the midpoints the CVaR computation assumes."""
         N = 21
         head = QuantileValueHead(input_dim=64, num_quantiles=N, huber_kappa=1.0)
 
@@ -39,23 +39,26 @@ class TestQuantileLevelsBug:
         # Expected formula: τ_i = (i + 0.5) / N
         expected_taus = (np.arange(N) + 0.5) / N
 
-        # Current (incorrect) formula: τ_i = (2i+1)/(2*(N+1))
-        current_formula_taus = (2 * np.arange(N) + 1) / (2 * (N + 1))
+        # The formula this used to use, kept to name what regressing looks like.
+        old_formula_taus = (2 * np.arange(N) + 1) / (2 * (N + 1))
 
-        # Verify that QuantileValueHead uses the "incorrect" formula
-        np.testing.assert_allclose(actual_taus, current_formula_taus, rtol=1e-6)
+        # The head uses the midpoint formula the CVaR computation assumes.
+        np.testing.assert_allclose(actual_taus, expected_taus, rtol=1e-6)
+        assert np.max(np.abs(actual_taus - old_formula_taus)) > 0.04
 
-        # Verify mismatch with expected formula
         max_diff = np.max(np.abs(actual_taus - expected_taus))
         print(f"\nQuantile Levels Formula Mismatch (N={N}):")
         print(f"τ₀: {actual_taus[0]:.6f} (actual) vs {expected_taus[0]:.6f} (expected)")
-        print(f"    Difference: {(actual_taus[0] - expected_taus[0]) / expected_taus[0] * 100:.2f}%")
+        print(
+            f"    Difference: {(actual_taus[0] - expected_taus[0]) / expected_taus[0] * 100:.2f}%"
+        )
         print(f"τ₂₀: {actual_taus[-1]:.6f} (actual) vs {expected_taus[-1]:.6f} (expected)")
-        print(f"    Difference: {(actual_taus[-1] - expected_taus[-1]) / expected_taus[-1] * 100:.2f}%")
+        print(
+            f"    Difference: {(actual_taus[-1] - expected_taus[-1]) / expected_taus[-1] * 100:.2f}%"
+        )
         print(f"Max absolute difference: {max_diff:.6f}")
 
-        # ASSERTION: Verify mismatch exists (4-5% at extremes)
-        assert max_diff > 0.04, "Expected ~4-5% mismatch at extremes"
+        assert max_diff < 1e-6, "Head taus must equal the midpoints CVaR assumes"
 
     def test_quantile_spacing_comparison(self):
         """Compare quantile spacing between current and correct formulas."""
@@ -97,7 +100,7 @@ class TestQuantileLevelsBug:
         expected_alpha_idx = max(0, int(math.floor(expected_alpha_idx_float)))  # 0
 
         # Find actual index where tau > alpha
-        actual_alpha_idx = np.searchsorted(actual_taus, alpha, side='right') - 1
+        actual_alpha_idx = np.searchsorted(actual_taus, alpha, side="right") - 1
         actual_alpha_idx = max(0, actual_alpha_idx)
 
         print(f"\nCVaR Index Computation (α={alpha}, N={N}):")
@@ -108,7 +111,9 @@ class TestQuantileLevelsBug:
 
         # For alpha=0.05, actual_taus[0]=0.02273 < 0.05 < actual_taus[1]=0.06818
         # So CVaR should use quantiles 0 and 1 for interpolation
-        assert actual_taus[0] < alpha < actual_taus[1], "Alpha should fall between first two quantiles"
+        assert (
+            actual_taus[0] < alpha < actual_taus[1]
+        ), "Alpha should fall between first two quantiles"
 
     @pytest.mark.parametrize("alpha", [0.01, 0.05, 0.10, 0.25])
     def test_cvar_bias_for_different_alphas(self, alpha):
@@ -180,8 +185,8 @@ class TestQuantileLevelsBug:
         print(f"Δτ (actual): {actual_delta:.6f}")
         print(f"Slope error: {(actual_delta - assumed_delta) / assumed_delta * 100:.2f}%")
 
-        # This will cause ~4% error in slope computation
-        assert abs((actual_delta - assumed_delta) / assumed_delta) > 0.04
+        # The extrapolation slope the CVaR code computes is the real spacing.
+        assert abs((actual_delta - assumed_delta) / assumed_delta) < 1e-6
 
     def test_coverage_at_extremes(self):
         """Test coverage of extreme quantiles (tails)."""
@@ -229,8 +234,7 @@ class TestQuantileLevelsBug:
             print(f"  τ_max: {actual_taus[-1]:.6f} vs {expected_taus[-1]:.6f} (Δ={diff_N:.6f})")
             print(f"  Max relative error: {max_rel_error:.2f}%")
 
-            # All should show ~4-5% error at extremes
-            assert max_rel_error > 3.0, f"Expected >3% error for N={N}"
+            assert max_rel_error < 1e-3, f"Head taus must match the midpoints for N={N}"
 
 
 class TestCVaRComputationWithBug:
@@ -244,11 +248,13 @@ class TestCVaRComputationWithBug:
 
         # Create synthetic quantile predictions (standard normal quantiles)
         from scipy.stats import norm
+
         expected_taus = (np.arange(N) + 0.5) / N
         true_quantile_values = torch.tensor(
-            [norm.ppf(tau) for tau in expected_taus],
-            dtype=torch.float32
-        ).unsqueeze(0)  # [1, N]
+            [norm.ppf(tau) for tau in expected_taus], dtype=torch.float32
+        ).unsqueeze(
+            0
+        )  # [1, N]
 
         # CVaR code's logic (simplified)
         alpha_idx_float = alpha * N - 0.5  # 0.05 * 21 - 0.5 = 0.55

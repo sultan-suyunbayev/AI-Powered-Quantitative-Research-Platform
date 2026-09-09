@@ -11,37 +11,47 @@ import pytest
 sys.path.append(os.getcwd())
 
 
-if "lob_state_cython" not in sys.modules:
+try:  # prefer the compiled extension so later tests still see the real module
+    import lob_state_cython  # noqa: F401
+except ImportError:
     lob_state_stub = types.ModuleType("lob_state_cython")
     lob_state_stub.N_FEATURES = 1
     sys.modules["lob_state_cython"] = lob_state_stub
 
 
-if "mediator" not in sys.modules:
-    mediator_stub = types.ModuleType("mediator")
+class _Mediator:
+    def __init__(self, env):
+        self.env = env
+        self.calls: list = []
+        self.exec = None
 
-    class _Mediator:
-        def __init__(self, env):
-            self.env = env
-            self.calls: list = []
-            self.exec = None
+    def reset(self):
+        self.calls.clear()
+        return np.zeros(self.env.observation_space.shape, dtype=np.float32), {}
 
-        def reset(self):
-            self.calls.clear()
-            return np.zeros(self.env.observation_space.shape, dtype=np.float32), {}
+    def step(self, proto):
+        self.calls.append(proto)
+        obs = np.zeros(self.env.observation_space.shape, dtype=np.float32)
+        return obs, 0.0, False, False, {}
 
-        def step(self, proto):
-            self.calls.append(proto)
-            obs = np.zeros(self.env.observation_space.shape, dtype=np.float32)
-            return obs, 0.0, False, False, {}
-
-    mediator_stub.Mediator = _Mediator
-    sys.modules["mediator"] = mediator_stub
+    def _build_observation(self, *, row=None, state=None, mark_price=None):
+        return np.zeros(self.env.observation_space.shape, dtype=np.float32)
 
 
 from action_proto import ActionProto, ActionType
 from scripts.check_reward_clipping_bar_vs_cython import simulate_bar_reward_path
+import trading_patchnew
 from trading_patchnew import TradingEnv
+
+
+@pytest.fixture(autouse=True)
+def _use_stub_mediator(monkeypatch):
+    """Give TradingEnv the lightweight mediator, without touching sys.modules.
+
+    Replacing sys.modules["mediator"] leaked the stub into every later test in
+    the same worker process; patching the name TradingEnv bound keeps it here.
+    """
+    monkeypatch.setattr(trading_patchnew, "Mediator", _Mediator)
 
 
 class _TestMediator:
@@ -75,6 +85,10 @@ class _TestMediator:
     def set_market_context(self, **_: object) -> None:
         return None
 
+    def _build_observation(self, *, row=None, state=None, mark_price=None):
+        """TradingEnv.step() calls this on every step; shape follows the env."""
+        return np.zeros(self.env.observation_space.shape, dtype=np.float32)
+
     def step(self, proto: ActionProto):
         self.calls.append(proto)
         obs = np.zeros(self.env.observation_space.shape, dtype=np.float32)
@@ -84,11 +98,17 @@ class _TestMediator:
         self.env.state.net_worth = net_worth
         self.env.state.cash = cash
         self.env.state.units = 0.0
-        return obs, 0.0, False, False, {
-            "executed_notional": turnover_notional,
-            "turnover": turnover_notional,
-            "fee_total": fee_total,
-        }
+        return (
+            obs,
+            0.0,
+            False,
+            False,
+            {
+                "executed_notional": turnover_notional,
+                "turnover": turnover_notional,
+                "fee_total": fee_total,
+            },
+        )
 
 
 def _sample_ratio(rng: np.random.Generator) -> float:
@@ -119,21 +139,40 @@ def _as_fraction(value: float) -> float:
     return value / 100.0 if value > 1.0 else value
 
 
-def test_signal_only_reward_applies_atr_clip() -> None:
+def test_signal_only_reward_disables_clipping_and_costs() -> None:
+    """SIGNAL_ONLY deliberately turns the reward clip and the costs off.
+
+    _apply_signal_only_overrides() zeroes turnover_penalty_coef,
+    reward_clip_adaptive, the hard cap, the multiplier and
+    reward_robust_clip_fraction, and sets reward_return_clip to +inf, so the
+    reward is the raw log return times the previous signal position.  The ATR
+    fraction is still reported for diagnostics.
+    """
     df = pd.DataFrame(
         {
-            "open": [100.0, 102.0, 104.0],
-            "high": [105.0, 106.0, 108.0],
-            "low": [95.0, 100.0, 103.0],
-            "close": [100.0, 104.0, 107.0],
-            "price": [100.0, 104.0, 107.0],
-            "ts_ms": [0, 60_000, 120_000],
+            # A fourth bar so that stepping from index 2 is not the terminal
+            # step: the env truncates the episode when the data runs out.
+            "open": [100.0, 102.0, 104.0, 107.0],
+            "high": [105.0, 106.0, 108.0, 109.0],
+            "low": [95.0, 100.0, 103.0, 106.0],
+            "close": [100.0, 104.0, 107.0, 108.0],
+            "price": [100.0, 104.0, 107.0, 108.0],
+            "ts_ms": [0, 60_000, 120_000, 180_000],
         }
     )
     clip_cfg = {"adaptive": True, "atr_window": 2, "hard_cap_pct": 50.0, "multiplier": 1.5}
     env = TradingEnv(df, seed=7, reward_signal_only=True, reward_clip=clip_cfg)
     env.reset()
     assert env._reward_signal_only is True
+
+    # The configured clip is overridden away in signal-only mode.
+    assert env.reward_clip_adaptive is False
+    assert env.reward_clip_hard_cap_fraction == 0.0
+    assert env.reward_clip_multiplier == 0.0
+    assert env.reward_robust_clip_fraction == 0.0
+    assert env.turnover_penalty_coef == 0.0
+    assert math.isinf(env.reward_return_clip)
+
     env.state.net_worth = 1_000.0
     env.state.cash = 1_000.0
     env.state.units = 0.0
@@ -142,7 +181,8 @@ def test_signal_only_reward_applies_atr_clip() -> None:
     env._mediator = mediator
     mediator.reset()
 
-    # Manually seed prior signal state to verify ATR-based clipping mechanics.
+    # Manually seed prior signal state: signal-only rewards the position held
+    # over the bar, not the action taken on it.
     env._last_signal_position = 0.5
     env._last_reward_price = df["price"].iloc[1]
 
@@ -150,34 +190,28 @@ def test_signal_only_reward_applies_atr_clip() -> None:
     mediator.queue(net_worth=1_000.0, turnover_notional=0.0, fee_total=0.0)
     _, reward_final, terminated, truncated, info_final = env.step(ActionProto(ActionType.HOLD, 0.0))
     assert not terminated and not truncated
-    atr_fraction = info_final["reward_clip_atr_fraction"]
-    hard_cap_fraction = _as_fraction(clip_cfg["hard_cap_pct"])
-    expected_clip = min(
-        hard_cap_fraction,
-        clip_cfg["multiplier"] * atr_fraction,
-        env.reward_robust_clip_fraction,
-    )
-    raw_expected = math.log(107.0 / 104.0) * info_final["signal_position_prev"]
-    clipped_before_costs = float(np.clip(raw_expected, -expected_clip, expected_clip))
-    costs_fraction = float(info_final["reward_costs_fraction"])
-    after_costs = clipped_before_costs - costs_fraction
-    final_expected = float(np.clip(after_costs, -expected_clip, expected_clip))
 
-    assert info_final["reward_clip_bound_fraction"] == pytest.approx(expected_clip, rel=1e-6)
-    assert info_final["reward_clip_atr_fraction"] == pytest.approx(atr_fraction, rel=1e-9)
+    assert info_final["signal_position_prev"] == pytest.approx(0.5)
+    raw_expected = math.log(107.0 / 104.0) * info_final["signal_position_prev"]
+
+    # Costs are off, so the raw fraction survives all the way to the reward.
+    assert info_final["reward_costs_fraction"] == pytest.approx(0.0)
     assert info_final["reward_raw_fraction"] == pytest.approx(raw_expected, rel=1e-6)
-    assert info_final["reward_used_fraction_before_costs"] == pytest.approx(
-        clipped_before_costs, rel=1e-6
-    )
-    assert info_final["reward_used_fraction"] == pytest.approx(after_costs, rel=1e-6)
-    assert reward_final == pytest.approx(final_expected, rel=1e-6)
+    assert info_final["reward_used_fraction_before_costs"] == pytest.approx(raw_expected, rel=1e-6)
+    assert info_final["reward_used_fraction"] == pytest.approx(raw_expected, rel=1e-6)
+    assert reward_final == pytest.approx(raw_expected, rel=1e-6)
+
+    # The ATR fraction is still measured, it just no longer bounds the reward.
+    assert info_final["reward_clip_atr_fraction"] > 0.0
 
 
 def test_reward_clip_bar_matches_reference() -> None:
     steps = 512
     rng = np.random.default_rng(1234)
-    df = _make_frame(steps)
-    env = TradingEnv(df, seed=17)
+    df = _make_frame(steps + 1)
+    # reward_signal_only defaults to True, and that path bypasses the mediator
+    # entirely; this test drives the mediator (turnover, fees), so opt out.
+    env = TradingEnv(df, seed=17, reward_signal_only=False)
     obs, _ = env.reset()
     assert obs.shape == env.observation_space.shape
 
@@ -237,9 +271,13 @@ def test_reward_clip_bar_matches_reference() -> None:
                 math.exp(env.reward_return_clip),
             )
         )
+        # Turnover is normalised by the RAW previous equity, not the floored
+        # one used for the log return: see the comment at the turnover_norm
+        # computation in trading_patchnew.  The cap is what keeps it bounded
+        # when equity is tiny.
         turnover_norm = float(
             np.clip(
-                (abs(turnover_notional) / prev_equity) if prev_equity > 0.0 else 0.0,
+                (abs(turnover_notional) / prev_net_worth) if prev_net_worth > 0.0 else 0.0,
                 0.0,
                 env.turnover_norm_cap,
             )
@@ -258,7 +296,9 @@ def test_reward_clip_bar_matches_reference() -> None:
         )
         assert info["reward"] == pytest.approx(final_expected, rel=1e-9, abs=1e-9)
         assert reward_env == pytest.approx(final_expected, rel=1e-9, abs=1e-9)
-        assert info["turnover_notional"] == pytest.approx(abs(turnover_notional), rel=1e-9, abs=1e-9)
+        assert info["turnover_notional"] == pytest.approx(
+            abs(turnover_notional), rel=1e-9, abs=1e-9
+        )
         assert info["turnover_norm"] == pytest.approx(turnover_norm, rel=1e-9, abs=1e-9)
         assert info["turnover_penalty"] == pytest.approx(turnover_penalty, rel=1e-9, abs=1e-9)
         assert info["fee_total"] == pytest.approx(fee_total, rel=1e-9, abs=1e-9)
@@ -276,4 +316,3 @@ def test_reward_clip_bar_matches_reference() -> None:
     assert float(np.mean(rewards_arr > env.reward_cap)) <= 1e-9
 
     env.close()
-

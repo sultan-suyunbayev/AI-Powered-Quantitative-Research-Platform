@@ -33,12 +33,33 @@ import pytest
 import sys
 from pathlib import Path
 
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
+
+
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
     from obs_builder import build_observation_vector
+
     HAVE_OBS_BUILDER = True
 except ImportError:
     HAVE_OBS_BUILDER = False
@@ -48,6 +69,7 @@ except ImportError:
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
 
 def create_valid_inputs(**overrides):
     """
@@ -78,13 +100,14 @@ def create_valid_inputs(**overrides):
         "risk_off_flag": False,
         "cash": 10000.0,
         "units": 0.5,
+        "signal_pos": 0.0,
         "last_vol_imbalance": 0.1,
         "last_trade_intensity": 5.0,
         "last_realized_spread": 0.001,
         "last_agent_fill_ratio": 0.95,
         "token_id": 0,
-        "max_num_tokens": 1,
-        "num_tokens": 1,
+        "max_num_tokens": _MAX_TOKENS,
+        "num_tokens": _MAX_TOKENS,
     }
 
     defaults.update(overrides)
@@ -96,46 +119,53 @@ def build_obs_with_inputs(**kwargs):
     Build observation vector with given inputs.
 
     Returns:
-        np.ndarray: Observation vector (63 features)
+        np.ndarray: Observation vector, _N_FEATURES long
     """
     inputs = create_valid_inputs(**kwargs)
 
     # Create norm_cols and output array
-    norm_cols = np.zeros(21, dtype=np.float32)
-    obs = np.zeros(63, dtype=np.float32)
+    norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
+    norm_cols_validity = np.ones(_EXT_DIM, dtype=np.uint8)
+    obs = np.zeros(_N_FEATURES, dtype=np.float32)
 
+    # Named arguments: the signature grew signal_pos, norm_cols_validity and
+    # enable_validity_flags, and a positional call silently shifts values into
+    # the wrong parameters.
     build_observation_vector(
-        float(inputs["price"]),
-        float(inputs["prev_price"]),
-        float(inputs["log_volume_norm"]),
-        float(inputs["rel_volume"]),
-        float(inputs["ma5"]),
-        float(inputs["ma20"]),
-        float(inputs["rsi14"]),
-        float(inputs["macd"]),
-        float(inputs["macd_signal"]),
-        float(inputs["momentum"]),
-        float(inputs["atr"]),
-        float(inputs["cci"]),
-        float(inputs["obv"]),
-        float(inputs["bb_lower"]),
-        float(inputs["bb_upper"]),
-        float(inputs["is_high_importance"]),
-        float(inputs["time_since_event"]),
-        float(inputs["fear_greed_value"]),
-        bool(inputs["has_fear_greed"]),
-        bool(inputs["risk_off_flag"]),
-        float(inputs["cash"]),
-        float(inputs["units"]),
-        float(inputs["last_vol_imbalance"]),
-        float(inputs["last_trade_intensity"]),
-        float(inputs["last_realized_spread"]),
-        float(inputs["last_agent_fill_ratio"]),
-        int(inputs["token_id"]),
-        int(inputs["max_num_tokens"]),
-        int(inputs["num_tokens"]),
-        norm_cols,
-        obs,
+        price=float(inputs["price"]),
+        prev_price=float(inputs["prev_price"]),
+        log_volume_norm=float(inputs["log_volume_norm"]),
+        rel_volume=float(inputs["rel_volume"]),
+        ma5=float(inputs["ma5"]),
+        ma20=float(inputs["ma20"]),
+        rsi14=float(inputs["rsi14"]),
+        macd=float(inputs["macd"]),
+        macd_signal=float(inputs["macd_signal"]),
+        momentum=float(inputs["momentum"]),
+        atr=float(inputs["atr"]),
+        cci=float(inputs["cci"]),
+        obv=float(inputs["obv"]),
+        bb_lower=float(inputs["bb_lower"]),
+        bb_upper=float(inputs["bb_upper"]),
+        is_high_importance=float(inputs["is_high_importance"]),
+        time_since_event=float(inputs["time_since_event"]),
+        fear_greed_value=float(inputs["fear_greed_value"]),
+        has_fear_greed=bool(inputs["has_fear_greed"]),
+        risk_off_flag=bool(inputs["risk_off_flag"]),
+        cash=float(inputs["cash"]),
+        units=float(inputs["units"]),
+        signal_pos=float(inputs["signal_pos"]),
+        last_vol_imbalance=float(inputs["last_vol_imbalance"]),
+        last_trade_intensity=float(inputs["last_trade_intensity"]),
+        last_realized_spread=float(inputs["last_realized_spread"]),
+        last_agent_fill_ratio=float(inputs["last_agent_fill_ratio"]),
+        token_id=int(inputs["token_id"]),
+        max_num_tokens=int(inputs["max_num_tokens"]),
+        num_tokens=int(inputs["num_tokens"]),
+        norm_cols_values=norm_cols,
+        norm_cols_validity=norm_cols_validity,
+        enable_validity_flags=True,
+        out_features=obs,
     )
 
     return obs
@@ -163,18 +193,20 @@ def get_bb_features(obs):
     """
     Extract Bollinger Bands related features from observation.
 
-    Feature layout (63-feature observation):
-    - bb_squeeze: index 29 (in microstructure block, measures volatility regime)
-    - bb_position: index 31 (in bollinger block, price position within bands)
-    - bb_width: index 32 (in bollinger block, normalized band width)
+    Positions follow the current feature layout:
+    - bb_squeeze: second entry of the microstructure block (volatility regime)
+    - bb_position: first entry of the bb_context block (price within the bands)
+    - bb_width: second entry of the bb_context block (normalised band width)
 
     Returns:
         dict: {feature_name: value}
     """
     return {
-        "bb_squeeze": obs[29],
-        "bb_position": obs[31],
-        "bb_width": obs[32],
+        # Offsets come from the layout: bb_squeeze is the second microstructure
+        # feature, bb_position and bb_width_norm are the bb_context block.
+        "bb_squeeze": obs[_block_start("microstructure") + 1],
+        "bb_position": obs[_block_start("bb_context")],
+        "bb_width": obs[_block_start("bb_context") + 1],
     }
 
 
@@ -182,11 +214,12 @@ def get_bb_features(obs):
 # TEST CASES
 # =============================================================================
 
+
 def test_both_bands_nan():
     """Test 1: Both bb_lower and bb_upper are NaN (early bars, typical scenario)."""
     obs = build_obs_with_inputs(
-        bb_lower=float('nan'),
-        bb_upper=float('nan'),
+        bb_lower=float("nan"),
+        bb_upper=float("nan"),
     )
 
     assert_no_nan_or_inf(obs, "Test 1: Both bands NaN")
@@ -204,7 +237,7 @@ def test_both_bands_nan():
 def test_only_lower_nan():
     """Test 2: Only bb_lower is NaN, bb_upper is valid (asymmetric case)."""
     obs = build_obs_with_inputs(
-        bb_lower=float('nan'),
+        bb_lower=float("nan"),
         bb_upper=50500.0,
     )
 
@@ -233,7 +266,7 @@ def test_only_upper_nan():
     """
     obs = build_obs_with_inputs(
         bb_lower=49500.0,
-        bb_upper=float('nan'),
+        bb_upper=float("nan"),
     )
 
     assert_no_nan_or_inf(obs, "Test 3: Only bb_upper NaN (CRITICAL)")
@@ -251,8 +284,8 @@ def test_only_upper_nan():
 def test_both_bands_inf():
     """Test 4: Both bb_lower and bb_upper are Inf (calculation overflow)."""
     obs = build_obs_with_inputs(
-        bb_lower=float('inf'),
-        bb_upper=float('inf'),
+        bb_lower=float("inf"),
+        bb_upper=float("inf"),
     )
 
     assert_no_nan_or_inf(obs, "Test 4: Both bands Inf")
@@ -270,7 +303,7 @@ def test_both_bands_inf():
 def test_only_lower_inf():
     """Test 5: Only bb_lower is Inf, bb_upper is valid."""
     obs = build_obs_with_inputs(
-        bb_lower=float('inf'),
+        bb_lower=float("inf"),
         bb_upper=50500.0,
     )
 
@@ -289,7 +322,7 @@ def test_only_upper_inf():
     """Test 6: Only bb_upper is Inf, bb_lower is valid."""
     obs = build_obs_with_inputs(
         bb_lower=49500.0,
-        bb_upper=float('inf'),
+        bb_upper=float("inf"),
     )
 
     assert_no_nan_or_inf(obs, "Test 6: Only bb_upper Inf")
@@ -420,8 +453,8 @@ def test_extreme_but_valid():
 def test_negative_inf_bands():
     """Test 11: Negative infinity bands (edge case)."""
     obs = build_obs_with_inputs(
-        bb_lower=float('-inf'),
-        bb_upper=float('-inf'),
+        bb_lower=float("-inf"),
+        bb_upper=float("-inf"),
     )
 
     assert_no_nan_or_inf(obs, "Test 11: Negative Inf bands")
@@ -438,8 +471,8 @@ def test_negative_inf_bands():
 def test_mixed_inf_nan():
     """Test 12: Mix of Inf and NaN (chaos scenario)."""
     obs = build_obs_with_inputs(
-        bb_lower=float('nan'),
-        bb_upper=float('inf'),
+        bb_lower=float("nan"),
+        bb_upper=float("inf"),
     )
 
     assert_no_nan_or_inf(obs, "Test 12: Mixed NaN and Inf")
@@ -502,5 +535,6 @@ if __name__ == "__main__":
         print(f"❌ ERROR: {e}")
         print("=" * 80)
         import traceback
+
         traceback.print_exc()
         raise

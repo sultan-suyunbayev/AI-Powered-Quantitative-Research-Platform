@@ -143,7 +143,10 @@ def test_publish_signal_custom_dedup_key(tmp_path):
         dedup_key="custom2",
     )
 
-    assert [row["payload"]["target_weight"] for row in sent] == [pytest.approx(0.2), pytest.approx(0.4)]
+    assert [row["payload"]["target_weight"] for row in sent] == [
+        pytest.approx(0.2),
+        pytest.approx(0.4),
+    ]
 
 
 def test_publish_signal_payload_fields(tmp_path):
@@ -247,14 +250,14 @@ def test_load_and_flush_state(tmp_path):
     now = int(time.time() * 1000)
     sid = sb.signal_id("BTCUSDT", 1)
     sb.mark_emitted(sid, expires_at_ms=now + 100, now_ms=now)
-    assert json.loads(sb._STATE_PATH.read_text()) == {sid: now + 100}
+    assert json.loads(sb._STATE_PATH.read_text(encoding="utf-8")) == {sid: now + 100}
 
     # Add expired entry and ensure mark_emitted purges it
     expired_sid = sb.signal_id("ETHUSDT", 2)
     sb._SEEN[expired_sid] = now - 1
     sb.flush_state()
     sb.mark_emitted(sid, expires_at_ms=now + 200, now_ms=now)
-    data = json.loads(sb._STATE_PATH.read_text())
+    data = json.loads(sb._STATE_PATH.read_text(encoding="utf-8"))
     assert expired_sid not in data
     assert data[sid] == now + 200
 
@@ -262,14 +265,12 @@ def test_load_and_flush_state(tmp_path):
     valid_sid = sid
     future_exp = now + 5000
     past_exp = now - 5000
-    sb._STATE_PATH.write_text(
-        json.dumps({valid_sid: future_exp, expired_sid: past_exp})
-    )
+    sb._STATE_PATH.write_text(json.dumps({valid_sid: future_exp, expired_sid: past_exp}))
     sb._SEEN.clear()
     sb._loaded = False
     sb.load_state()
     assert sb._SEEN == {valid_sid: future_exp}
-    assert json.loads(sb._STATE_PATH.read_text()) == {valid_sid: future_exp}
+    assert json.loads(sb._STATE_PATH.read_text(encoding="utf-8")) == {valid_sid: future_exp}
 
 
 def test_publish_signal_loads_once_and_flushes(tmp_path):
@@ -299,7 +300,7 @@ def test_publish_signal_loads_once_and_flushes(tmp_path):
         )
         assert ok
         assert calls == [1]
-        assert json.loads(sb._STATE_PATH.read_text()) == {sid: now + 100}
+        assert json.loads(sb._STATE_PATH.read_text(encoding="utf-8")) == {sid: now + 100}
     finally:
         sb.load_state = orig_load  # type: ignore
 
@@ -312,7 +313,7 @@ def test_load_state_reinit_on_corruption(tmp_path):
     sb._STATE_PATH.write_text("not-json")
     sb.load_state()
     assert sb._SEEN == {}
-    assert json.loads(sb._STATE_PATH.read_text()) == {}
+    assert json.loads(sb._STATE_PATH.read_text(encoding="utf-8")) == {}
 
 
 def test_publish_signal_csv_logging(tmp_path):
@@ -338,7 +339,7 @@ def test_publish_signal_csv_logging(tmp_path):
     assert sent[0]["payload"]["target_weight"] == pytest.approx(0.1)
     out_path = Path(sb.OUT_CSV)
     assert out_path.exists()
-    assert len(out_path.read_text().strip().splitlines()) == 2
+    assert len(out_path.read_text(encoding="utf-8").strip().splitlines()) == 2
 
     # expired signal should be logged to drops CSV and not sent
     ok = sb.publish_signal(
@@ -348,7 +349,7 @@ def test_publish_signal_csv_logging(tmp_path):
     assert len(sent) == 1
     drop_path = Path(sb.DROPS_CSV)
     assert drop_path.exists()
-    assert len(drop_path.read_text().strip().splitlines()) == 2
+    assert len(drop_path.read_text(encoding="utf-8").strip().splitlines()) == 2
 
     sb.OUT_CSV = None
     sb.DROPS_CSV = None
@@ -364,6 +365,8 @@ def test_log_drop_counts():
     )
     sb.log_drop(envelope, "RISK_TEST")
     assert sb.dropped_by_reason["RISK_TEST"] == 1
+
+
 def _make_payload(weight: float = 0.1, *, edge: float = 10.0) -> SpotSignalTargetWeightPayload:
     economics = SpotSignalEconomics(
         edge_bps=edge,
@@ -373,4 +376,3 @@ def _make_payload(weight: float = 0.1, *, edge: float = 10.0) -> SpotSignalTarge
         act_now=True,
     )
     return SpotSignalTargetWeightPayload(target_weight=weight, economics=economics)
-

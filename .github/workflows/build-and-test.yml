@@ -6,10 +6,20 @@ on:
   pull_request:
     branches: [main, master, develop]
 
+# The whole suite on two platforms is most of an hour of runner time. Without
+# this, pushing three times in an hour queues three of them and the newest waits
+# behind runs whose result nobody wants.
+concurrency:
+  group: build-and-test-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build, verify hash, and test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Without this the job runs into the platform limit, which took four hours
+    # to report that the test step had hung. Fail while the log is still useful.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -17,10 +27,19 @@ jobs:
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PYTHONDONTWRITEBYTECODE: "1"
+      # Job-wide, not per step: the tree carries Russian comments and box-drawing
+      # characters, and the Windows runner's default encoding cannot read or
+      # print them. Several steps already set this individually.
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        # several steps use bash heredocs; on windows-latest the default shell is
+        # PowerShell, where `python - <<'PY'` is a parse error
+        shell: bash
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install make (Windows)
         if: matrix.os == 'windows-latest'
@@ -28,7 +47,7 @@ jobs:
         run: choco install make --yes
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -40,7 +59,9 @@ jobs:
           python -m pip install -r requirements-dev.lock.txt
 
       - name: Lint with ruff
-        run: python -m ruff check .
+        # --no-cache: ruff would otherwise leave .ruff_cache behind, and the
+        # generated-file policy check further down treats it as an artefact
+        run: python -m ruff check --no-cache .
 
       - name: Check formatting with black
         run: python -m black --check .
@@ -98,7 +119,9 @@ jobs:
         continue-on-error: true
         env:
           PYTHONUTF8: "1"
-        run: python -m detect_secrets scan --baseline .secrets.baseline --all-files --json > detect-secrets-scan.json
+        # `scan` already emits JSON on stdout; there is no --json flag, and passing
+        # one made the command exit 2 on argument parsing rather than on findings
+        run: python -m detect_secrets scan --baseline .secrets.baseline --all-files > detect-secrets-scan.json
 
       - name: Detect secrets (enforced)
         env:
@@ -115,7 +138,6 @@ jobs:
               "--baseline",
               ".secrets.baseline",
               "--all-files",
-              "--json",
           ]
           result = subprocess.run(cmd, capture_output=True, text=True)
           pathlib.Path("detect-secrets-scan.json").write_text(result.stdout, encoding="utf-8")
@@ -126,13 +148,21 @@ jobs:
 
           baseline = json.loads(pathlib.Path(".secrets.baseline").read_text(encoding="utf-8"))
           scan = json.loads(result.stdout or "{}")
-          baseline_hashes = {
-              fname: {finding["hashed_secret"] for finding in findings}
-              for fname, findings in baseline.get("results", {}).items()
-          }
+
+          # detect-secrets reports native separators, so on Windows every path is
+          # spelled with backslashes and matches nothing in a baseline recorded on
+          # Linux. Compare on a normalised key.
+          def key(name):
+              return name.replace("\\", "/")
+
+          baseline_hashes = {}
+          for fname, findings in baseline.get("results", {}).items():
+              baseline_hashes.setdefault(key(fname), set()).update(
+                  finding["hashed_secret"] for finding in findings
+              )
           new = []
           for fname, findings in scan.get("results", {}).items():
-              allowed = baseline_hashes.get(fname, set())
+              allowed = baseline_hashes.get(key(fname), set())
               for finding in findings:
                   if finding.get("hashed_secret") not in allowed:
                       new.append(f"{fname}:{finding.get('line_number')} ({finding.get('type')})")
@@ -168,84 +198,6 @@ jobs:
 
       - name: Run test suite
         run: make test
-
-      # ========================================================================
-      # Coverage Tracking (PM-005: test-coverage guardrail)
-      # Tech Debt: docs-ci-coverage-gate - generates CI artifact for verification
-      # ========================================================================
-      - name: Run coverage analysis
-        if: always() && matrix.os == 'ubuntu-latest'
-        env:
-          PYTHONUTF8: "1"
-        run: |
-          echo "=== Coverage Analysis (PM-005) ==="
-          python -m pip install pytest-cov coverage
-          python -m pytest tests/ -v --tb=short \
-            --cov=. \
-            --cov-report=xml:coverage.xml \
-            --cov-report=html:htmlcov \
-            --cov-report=term \
-            --cov-fail-under=0 \
-            --ignore=sandbox || true
-          echo ""
-          echo "=== Coverage Summary ==="
-          python -m coverage report --include="packages/*,ccea/*,adapters/*,*.py" --omit="tests/*,sandbox/*,setup.py" 2>/dev/null || echo "Coverage report generated"
-
-      - name: Generate coverage delta report
-        if: always() && matrix.os == 'ubuntu-latest'
-        env:
-          PYTHONUTF8: "1"
-        run: |
-          python - <<'PY'
-          import json
-          import xml.etree.ElementTree as ET
-          from pathlib import Path
-          from datetime import datetime
-
-          report = {
-              "timestamp": datetime.utcnow().isoformat() + "Z",
-              "status": "TRACKED",
-              "pm005_enforced": False,
-              "pm005_note": "Coverage is tracked but threshold not enforced (TARGET per CI_GUARDRAILS.md)",
-              "coverage_percent": None,
-              "files_covered": 0,
-              "lines_covered": 0,
-              "lines_total": 0,
-          }
-
-          try:
-              tree = ET.parse("coverage.xml")
-              root = tree.getroot()
-              line_rate = float(root.get("line-rate", 0))
-              report["coverage_percent"] = round(line_rate * 100, 2)
-              report["files_covered"] = len(root.findall(".//class"))
-              # Extract line counts
-              lines_valid = int(root.get("lines-valid", 0))
-              lines_covered = int(root.get("lines-covered", 0))
-              report["lines_total"] = lines_valid
-              report["lines_covered"] = lines_covered
-              print(f"Overall coverage: {report['coverage_percent']}%")
-              print(f"Lines: {lines_covered}/{lines_valid}")
-              print(f"Files: {report['files_covered']}")
-          except Exception as e:
-              report["error"] = str(e)
-              print(f"Could not parse coverage.xml: {e}")
-
-          Path("coverage-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-          print("\nCoverage report written to coverage-report.json")
-          PY
-
-      - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
-        if: always() && matrix.os == 'ubuntu-latest'
-        with:
-          name: coverage-report
-          path: |
-            coverage.xml
-            coverage-report.json
-            htmlcov/
-          retention-days: 30
-          if-no-files-found: ignore
 
       # ========================================================================
       # Test Skip Count Tracking (Tech Debt: testing-skipif-tracking)
@@ -308,7 +260,7 @@ jobs:
           PY
 
       - name: Upload skip report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: always()
         with:
           name: skip-report-${{ matrix.os }}
@@ -360,7 +312,7 @@ jobs:
           PY
 
       - name: Upload complexity report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: always()
         with:
           name: complexity-report-${{ matrix.os }}
@@ -463,7 +415,7 @@ jobs:
           PY
 
       - name: Upload lockfile freshness report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: always() && matrix.os == 'ubuntu-latest'
         with:
           name: lockfile-freshness
@@ -476,5 +428,121 @@ jobs:
 
       - name: Ensure worktree is clean after clean
         run: |
+          # `detect-secrets scan --baseline X` updates X in place: it refreshes the
+          # recorded line numbers on every run. That is the tool working as
+          # designed, and it is not a change anyone would commit, so put the file
+          # back before judging the worktree.
+          git checkout -- .secrets.baseline || true
           make check-clean
           python -c "import subprocess, sys; s=subprocess.check_output(['git','status','--porcelain']).decode().strip(); print(s) if s else None; sys.exit(1 if s else 0)"
+
+  # ==========================================================================
+  # Coverage Tracking (PM-005: test-coverage guardrail)
+  # Tech Debt: docs-ci-coverage-gate - generates CI artifact for verification
+  #
+  # Its own job, not another step of `build`: coverage needs a second full pass
+  # over the suite, and running it inside the build job added that hour to the
+  # critical path instead of spending it in parallel.
+  # ==========================================================================
+  coverage:
+    name: Coverage analysis (ubuntu-latest)
+    runs-on: ubuntu-latest
+    # The whole suite again, for a number that is tracked and not enforced
+    # (--cov-fail-under=0, and the step ends in `|| true`). Worth having on the
+    # trunk; not worth 25 minutes of runner time on every push to a branch,
+    # where it competes with the two platform jobs that do gate the merge.
+    if: github.event_name == 'push'
+    timeout-minutes: 90
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies (CPU, build, dev)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+          python -m pip install -r requirements-cpu.lock.txt
+          python -m pip install -r requirements-dev.lock.txt
+
+      - name: Build extensions
+        run: make build
+
+      - name: Run coverage analysis
+        run: |
+          echo "=== Coverage Analysis (PM-005) ==="
+          python -m pytest tests/ --tb=short -n auto --dist loadfile \
+            --cov=. \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov \
+            --cov-report=term \
+            --cov-fail-under=0 \
+            --ignore=sandbox || true
+          echo ""
+          echo "=== Coverage Summary ==="
+          python -m coverage report --include="packages/*,ccea/*,adapters/*,*.py" --omit="tests/*,sandbox/*,setup.py" 2>/dev/null || echo "Coverage report generated"
+
+      - name: Generate coverage delta report
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          report = {
+              "timestamp": datetime.now(timezone.utc).isoformat(),
+              "status": "TRACKED",
+              "pm005_enforced": False,
+              "pm005_note": "Coverage is tracked but threshold not enforced (TARGET per CI_GUARDRAILS.md)",
+              "coverage_percent": None,
+              "files_covered": 0,
+              "lines_covered": 0,
+              "lines_total": 0,
+          }
+
+          try:
+              tree = ET.parse("coverage.xml")
+              root = tree.getroot()
+              line_rate = float(root.get("line-rate", 0))
+              report["coverage_percent"] = round(line_rate * 100, 2)
+              report["files_covered"] = len(root.findall(".//class"))
+              lines_valid = int(root.get("lines-valid", 0))
+              lines_covered = int(root.get("lines-covered", 0))
+              report["lines_total"] = lines_valid
+              report["lines_covered"] = lines_covered
+              print(f"Overall coverage: {report['coverage_percent']}%")
+              print(f"Lines: {lines_covered}/{lines_valid}")
+              print(f"Files: {report['files_covered']}")
+          except Exception as e:
+              report["error"] = str(e)
+              print(f"Could not parse coverage.xml: {e}")
+
+          Path("coverage-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+          print("\nCoverage report written to coverage-report.json")
+          PY
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            coverage-report.json
+            htmlcov/
+          retention-days: 30
+          if-no-files-found: ignore

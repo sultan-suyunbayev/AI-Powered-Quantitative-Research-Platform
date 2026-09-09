@@ -39,12 +39,14 @@ def test_yang_zhang_with_full_ohlc():
     ohlc_bars = []
     for i in range(24):
         base = 100 + i * 0.5
-        ohlc_bars.append({
-            "open": base,
-            "high": base + 1.0,
-            "low": base - 0.5,
-            "close": base + 0.3,
-        })
+        ohlc_bars.append(
+            {
+                "open": base,
+                "high": base + 1.0,
+                "low": base - 0.5,
+                "close": base + 0.3,
+            }
+        )
 
     vol = calculate_yang_zhang_volatility(ohlc_bars, 24)
 
@@ -76,7 +78,6 @@ def test_transformer_with_ohlc():
         lookbacks_prices=[240],  # 4h для 4h интервала
         rsi_period=14,
         yang_zhang_windows=[2880],  # 48h
-        sma_periods=[],
         garch_windows=[],
         parkinson_windows=[],
         taker_buy_ratio_windows=[],
@@ -127,7 +128,6 @@ def test_transformer_without_ohlc():
         lookbacks_prices=[240],  # 4h
         rsi_period=14,
         yang_zhang_windows=[2880],  # 48h
-        sma_periods=[],
         garch_windows=[],
         parkinson_windows=[],
         taker_buy_ratio_windows=[],
@@ -171,7 +171,6 @@ def test_transformer_mixed_ohlc():
         lookbacks_prices=[240],
         rsi_period=14,
         yang_zhang_windows=[2880],  # 48h = 12 баров
-        sma_periods=[],
         garch_windows=[],
         parkinson_windows=[],
         taker_buy_ratio_windows=[],
@@ -238,7 +237,6 @@ def test_multiple_windows():
         lookbacks_prices=[240],
         rsi_period=14,
         yang_zhang_windows=[2880, 10080, 43200],  # 48h, 7d, 30d
-        sma_periods=[],
         garch_windows=[],
         parkinson_windows=[],
         taker_buy_ratio_windows=[],

@@ -5,6 +5,7 @@ Tests the full pipeline integration.
 """
 
 import pytest
+
 torch = pytest.importorskip("torch")
 from unittest.mock import MagicMock
 
@@ -68,7 +69,7 @@ class TestPBTAdversarialIntegration:
         state = torch.randn(4, 10)
 
         def loss_fn(s):
-            return (s ** 2).sum()
+            return (s**2).sum()
 
         delta = perturbation_gen.generate_perturbation(state, loss_fn)
 
@@ -101,9 +102,15 @@ class TestPBTAdversarialIntegration:
 
                 # Check if should exploit
                 if scheduler.should_exploit_and_explore(member):
-                    new_state, new_hyperparams = scheduler.exploit_and_explore(member)
-                    # new_state could be None or a state dict
+                    (
+                        new_state,
+                        new_hyperparams,
+                        checkpoint_format,
+                    ) = scheduler.exploit_and_explore(member)
+                    # new_state could be None or a set of model parameters
                     assert new_hyperparams is not None
+                    if new_state is not None:
+                        assert checkpoint_format is not None
 
         # All members should have history
         assert all(len(m.history) > 0 for m in population)

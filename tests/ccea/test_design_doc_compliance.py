@@ -15,6 +15,7 @@ These tests ensure the project matches the Design Doc specification.
 import json
 import os
 import pytest
+import sys
 import tempfile
 import warnings
 from datetime import datetime
@@ -26,6 +27,7 @@ from unittest.mock import MagicMock, Mock, patch
 # ============================================================================
 # Test: ArtifactVerifier Integration in Preflight
 # ============================================================================
+
 
 class TestPreflightVerifierIntegration:
     """Tests for ArtifactVerifier integration in preflight.py."""
@@ -66,7 +68,7 @@ class TestPreflightVerifierIntegration:
                 "signature": {
                     "algorithm": "ed25519",
                     "signature_value": "test_signature_base64",
-                }
+                },
             }
 
             result = checker._check_signature_fallback(manifest, None)
@@ -104,6 +106,7 @@ class TestPreflightVerifierIntegration:
         # If ccea.artifact.verifier is importable, flag should be True
         try:
             from ccea.artifact.verifier import ArtifactVerifier
+
             assert preflight.VERIFIER_AVAILABLE is True
         except ImportError:
             assert preflight.VERIFIER_AVAILABLE is False
@@ -112,6 +115,7 @@ class TestPreflightVerifierIntegration:
 # ============================================================================
 # Test: REQUEST_UPGRADE_ARTIFACT Implementation
 # ============================================================================
+
 
 class TestRequestUpgradeArtifact:
     """Tests for REQUEST_UPGRADE_ARTIFACT command handling."""
@@ -162,21 +166,25 @@ class TestRequestUpgradeArtifact:
         # JSON string payload
         cmd = MagicMock()
         cmd.command_id = "cmd-123"
-        cmd.payload_ref = json.dumps({
-            "download_url": "https://example.com/artifact.tar.gz",
-            "digest": "sha256:abc123",
-            "name": "test-strategy",
-            "signature": {
-                "algorithm": "ed25519",
-                "signature": "sig_base64",
-                "key_id": "key-001",
+        cmd.payload_ref = json.dumps(
+            {
+                "download_url": "https://example.com/artifact.tar.gz",
+                "digest": "sha256:abc123",
+                "name": "test-strategy",
+                "signature": {
+                    "algorithm": "ed25519",
+                    "signature": "sig_base64",
+                    "key_id": "key-001",
+                },
             }
-        })
+        )
         cmd.deployment_id = "deploy-123"
 
         # Will fail at download, but should parse payload correctly
         with patch("packages.agent.daemon.artifact_manager.ArtifactManager") as mock_manager:
-            mock_manager.return_value.download_verify_and_prepare.side_effect = Exception("Network error")
+            mock_manager.return_value.download_verify_and_prepare.side_effect = Exception(
+                "Network error"
+            )
             success, result, error = daemon._handle_upgrade_artifact(cmd)
 
         # Should have attempted download with correct params
@@ -186,6 +194,7 @@ class TestRequestUpgradeArtifact:
 # ============================================================================
 # Test: REQUEST_UPDATE_CONFIG Implementation
 # ============================================================================
+
 
 class TestRequestUpdateConfig:
     """Tests for REQUEST_UPDATE_CONFIG command handling."""
@@ -217,7 +226,7 @@ class TestRequestUpdateConfig:
             config_path = Path(tmpdir) / "runtime_config.json"
             assert config_path.exists()
 
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 saved = json.load(f)
             assert saved["config"]["max_position_size"] == 1000
             assert saved["change_class"] == "NON_IMPACTING"
@@ -289,6 +298,7 @@ class TestRequestUpdateConfig:
 # Test: Manifest Format Standardization
 # ============================================================================
 
+
 class TestManifestFormatStandardization:
     """Tests for manifest format standardization (JSON canonical)."""
 
@@ -308,13 +318,15 @@ class TestManifestFormatStandardization:
         """Test parsing manifest from JSON."""
         from packages.agent.daemon.artifact_manager import ArtifactManifest
 
-        json_content = json.dumps({
-            "name": "test-strategy",
-            "version": "1.0.0",
-            "schema_version": "1.0.0",
-            "entrypoint": {"module": "strategy", "class_name": "MyStrategy"},
-            "runtime": {"python_version": ">=3.10"},
-        })
+        json_content = json.dumps(
+            {
+                "name": "test-strategy",
+                "version": "1.0.0",
+                "schema_version": "1.0.0",
+                "entrypoint": {"module": "strategy", "class_name": "MyStrategy"},
+                "runtime": {"python_version": ">=3.10"},
+            }
+        )
 
         manifest = ArtifactManifest.from_json(json_content)
 
@@ -328,10 +340,14 @@ class TestManifestFormatStandardization:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             manifest_path = Path(tmpdir) / "manifest.json"
-            manifest_path.write_text(json.dumps({
-                "name": "json-strategy",
-                "version": "2.0.0",
-            }))
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "name": "json-strategy",
+                        "version": "2.0.0",
+                    }
+                )
+            )
 
             manifest = ArtifactManifest.from_file(manifest_path)
 
@@ -344,12 +360,14 @@ class TestManifestFormatStandardization:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             manifest_path = Path(tmpdir) / "manifest.yaml"
-            manifest_path.write_text("""
+            manifest_path.write_text(
+                """
 name: yaml-strategy
 version: 1.0.0
 type: strategy
 entrypoint: main.Strategy
-""")
+"""
+            )
 
             manifest = ArtifactManifest.from_file(manifest_path)
 
@@ -380,8 +398,22 @@ entrypoint: main.Strategy
 # Test: ccea/agent/* Deprecation Notices
 # ============================================================================
 
+
 class TestCCEAAgentDeprecation:
     """Tests for ccea/agent/* deprecation notices."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_deprecated_import(self, monkeypatch):
+        """ccea.agent blocks its own import when $CI is set.
+
+        The guardrail names CCEA_ALLOW_DEPRECATED as the bypass for migration
+        testing, which is what these tests are. Without it they fail on every
+        CI runner and pass on every developer machine.
+        """
+        monkeypatch.setenv("CCEA_ALLOW_DEPRECATED", "true")
+        monkeypatch.delenv("CCEA_STRICT_DEPRECATION", raising=False)
+        for name in [m for m in list(sys.modules) if m.startswith("ccea.agent")]:
+            monkeypatch.delitem(sys.modules, name, raising=False)
 
     def test_ccea_agent_init_warns(self):
         """Test that importing ccea.agent raises DeprecationWarning."""
@@ -401,12 +433,13 @@ class TestCCEAAgentDeprecation:
 
             # Check warning was raised
             deprecation_warnings = [
-                warning for warning in w
-                if issubclass(warning.category, DeprecationWarning)
+                warning for warning in w if issubclass(warning.category, DeprecationWarning)
             ]
 
             assert len(deprecation_warnings) > 0
-            assert any("deprecated" in str(warning.message).lower() for warning in deprecation_warnings)
+            assert any(
+                "deprecated" in str(warning.message).lower() for warning in deprecation_warnings
+            )
 
     def test_ccea_agent_daemon_warns(self):
         """Test that importing ccea.agent.daemon raises DeprecationWarning."""
@@ -423,8 +456,7 @@ class TestCCEAAgentDeprecation:
             import ccea.agent.daemon
 
             deprecation_warnings = [
-                warning for warning in w
-                if issubclass(warning.category, DeprecationWarning)
+                warning for warning in w if issubclass(warning.category, DeprecationWarning)
             ]
 
             assert len(deprecation_warnings) > 0
@@ -437,7 +469,8 @@ class TestCCEAAgentDeprecation:
             from packages.agent.daemon.agentd import AgentDaemon
 
             deprecation_warnings = [
-                warning for warning in w
+                warning
+                for warning in w
                 if issubclass(warning.category, DeprecationWarning)
                 and "packages.agent" in str(warning.filename)
             ]
@@ -449,6 +482,7 @@ class TestCCEAAgentDeprecation:
 # ============================================================================
 # Test: Design Doc Must-Have Compliance
 # ============================================================================
+
 
 class TestDesignDocMustHave:
     """Tests for Design Doc Must-Have requirements (Section 3.1)."""
@@ -485,6 +519,7 @@ class TestDesignDocMustHave:
 
             # Test signature shows requirement exists
             import inspect
+
             sig = inspect.signature(manager.download_and_verify)
             assert "expected_digest" in sig.parameters
 
@@ -503,6 +538,7 @@ class TestDesignDocMustHave:
 # ============================================================================
 # Test: State Machine Compliance
 # ============================================================================
+
 
 class TestStateMachineCompliance:
     """Tests for Design Doc state machine compliance (Section 11)."""
@@ -554,6 +590,7 @@ class TestStateMachineCompliance:
 # Test: Protocol Compliance
 # ============================================================================
 
+
 class TestProtocolCompliance:
     """Tests for Design Doc protocol compliance (Section 10)."""
 
@@ -580,6 +617,7 @@ class TestProtocolCompliance:
 
         # HeartbeatMessage should have agent_id and timestamp
         import inspect
+
         sig = inspect.signature(HeartbeatMessage)
         params = list(sig.parameters.keys())
 

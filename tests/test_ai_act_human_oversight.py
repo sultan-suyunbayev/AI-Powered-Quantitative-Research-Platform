@@ -48,6 +48,7 @@ from services.ai_act.human_oversight import (
 # Test Enums
 # =============================================================================
 
+
 class TestOversightLevel:
     """Tests for OversightLevel enum."""
 
@@ -112,6 +113,7 @@ class TestAlertSeverity:
 # =============================================================================
 # Test Dataclasses
 # =============================================================================
+
 
 class TestOversightAction:
     """Tests for OversightAction dataclass."""
@@ -250,6 +252,7 @@ class TestHumanOversightConfig:
 # Test AnomalyDetector
 # =============================================================================
 
+
 class TestAnomalyDetector:
     """Tests for AnomalyDetector class."""
 
@@ -333,6 +336,7 @@ class TestAnomalyDetector:
 # =============================================================================
 # Test ManualOverrideController
 # =============================================================================
+
 
 class TestManualOverrideController:
     """Tests for ManualOverrideController class."""
@@ -431,6 +435,7 @@ class TestManualOverrideController:
 # Test AutomationBiasMonitor
 # =============================================================================
 
+
 class TestAutomationBiasMonitor:
     """Tests for AutomationBiasMonitor class."""
 
@@ -521,6 +526,7 @@ class TestAutomationBiasMonitor:
 # =============================================================================
 # Test HumanOversightSystem
 # =============================================================================
+
 
 class TestHumanOversightSystem:
     """Tests for HumanOversightSystem class."""
@@ -723,7 +729,7 @@ class TestHumanOversightSystem:
 
         assert report_path.exists()
 
-        with open(report_path) as f:
+        with open(report_path, encoding="utf-8") as f:
             report = json.load(f)
 
         assert "ai_act_article" in report
@@ -787,7 +793,7 @@ class TestHumanOversightSystem:
         state_file = tmp_path / "oversight" / "oversight_state.json"
         assert state_file.exists()
 
-        with open(state_file) as f:
+        with open(state_file, encoding="utf-8") as f:
             state_data = json.load(f)
 
         assert state_data["state"] == "stopped"
@@ -796,6 +802,7 @@ class TestHumanOversightSystem:
 # =============================================================================
 # Test Factory Functions
 # =============================================================================
+
 
 class TestFactoryFunctions:
     """Tests for factory functions."""
@@ -824,6 +831,7 @@ class TestFactoryFunctions:
 # =============================================================================
 # Test Thread Safety
 # =============================================================================
+
 
 class TestThreadSafety:
     """Tests for thread safety."""
@@ -924,6 +932,7 @@ class TestThreadSafety:
 # Test Integration Scenarios
 # =============================================================================
 
+
 class TestIntegrationScenarios:
     """Integration tests for realistic scenarios."""
 
@@ -1017,7 +1026,7 @@ class TestIntegrationScenarios:
         # Export audit report
         report_path = oversight.export_audit_report()
 
-        with open(report_path) as f:
+        with open(report_path, encoding="utf-8") as f:
             report = json.load(f)
 
         # Verify report structure
@@ -1032,6 +1041,7 @@ class TestIntegrationScenarios:
 # =============================================================================
 # Test Capability Restrictions
 # =============================================================================
+
 
 class TestCapabilityRestrictions:
     """Test capability enable/disable."""

@@ -104,7 +104,9 @@ class TestLatencyImpl:
         assert len(impl.latency) == 7  # daily multipliers
 
     def test_initialization_with_custom_defaults(self):
-        cfg = LatencyCfg(seasonality_default=1.5)
+        # seasonality_default is the fallback for when no profile is available;
+        # with the repository's own seasonality file present it is not consulted.
+        cfg = LatencyCfg(seasonality_default=1.5, seasonality_path="does/not/exist.json")
         impl = LatencyImpl(cfg)
 
         assert all(m == 1.5 for m in impl.latency)
@@ -355,7 +357,8 @@ class TestEdgeCases:
 
     def test_seasonality_default_sequence(self):
         """Test seasonality_default as sequence."""
-        cfg = LatencyCfg(seasonality_default=[1.5] * 168)
+        # As above: the default only applies when no profile can be loaded.
+        cfg = LatencyCfg(seasonality_default=[1.5] * 168, seasonality_path="does/not/exist.json")
         impl = LatencyImpl(cfg)
 
         assert all(m == 1.5 for m in impl.latency)

@@ -2,7 +2,7 @@
 Tests for technical indicators integration in observation vector.
 
 This test suite verifies that:
-1. Observation vector has correct size (63 features, was 56, expanded by 6 validity flags)
+1. Observation vector has the size the layout declares (feature_config.N_FEATURES)
 2. Technical indicators populate the observation (not all zeros)
 3. cvd_24h, garch_7d, yang_zhang_48h appear in obs (обновлено для 4h таймфрейма)
 4. Works in training mode
@@ -13,6 +13,25 @@ import numpy as np
 import pandas as pd
 from typing import Any
 from pathlib import Path
+
+import feature_config as _fc
+
+# Sizes come from the layout rather than being spelled out: obs_builder writes
+# through typed memoryviews with bounds checking off, so a buffer that is too
+# short corrupts memory instead of raising.
+_N_FEATURES = _fc.N_FEATURES
+_EXT_DIM = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "external")
+_MAX_TOKENS = next(b["size"] for b in _fc.FEATURES_LAYOUT if b["name"] == "token")
+
+
+def _block_start(name):
+    """First index of a named block in the current feature layout."""
+    offset = 0
+    for block in _fc.FEATURES_LAYOUT:
+        if block["name"] == name:
+            return offset
+        offset += block["size"]
+    raise KeyError(name)
 
 
 # Mock minimal environment and state for testing
@@ -177,21 +196,25 @@ class MockMediator:
 
     def _extract_norm_cols(self, row: Any) -> np.ndarray:
         """Imported from mediator.py (обновлено для 4h таймфрейма, 21 признак)."""
-        norm_cols = np.zeros(21, dtype=np.float32)
+        norm_cols = np.zeros(_EXT_DIM, dtype=np.float32)
 
         # Original 8 (обновлено для 4h)
         norm_cols[0] = self._get_safe_float(row, "cvd_24h", 0.0)
         norm_cols[1] = self._get_safe_float(row, "cvd_7d", 0.0)  # было cvd_168h
         norm_cols[2] = self._get_safe_float(row, "yang_zhang_48h", 0.0)  # было yang_zhang_24h
         norm_cols[3] = self._get_safe_float(row, "yang_zhang_7d", 0.0)  # было yang_zhang_168h
-        norm_cols[4] = self._get_safe_float(row, "garch_200h", 0.0)  # было garch_12h. 42 бара = 10080 мин = 7d, минимум для GARCH на 4h
+        norm_cols[4] = self._get_safe_float(
+            row, "garch_200h", 0.0
+        )  # было garch_12h. 42 бара = 10080 мин = 7d, минимум для GARCH на 4h
         norm_cols[5] = self._get_safe_float(row, "garch_14d", 0.0)  # было garch_24h
         norm_cols[6] = self._get_safe_float(row, "ret_12h", 0.0)  # было ret_15m
         norm_cols[7] = self._get_safe_float(row, "ret_24h", 0.0)  # было ret_60m
 
         # Additional 8 (43->51, обновлено для 4h)
         norm_cols[8] = self._get_safe_float(row, "ret_4h", 0.0)  # было ret_5m
-        norm_cols[9] = self._get_safe_float(row, "sma_12000", 0.0)  # было sma_60. 50 баров = 12000 минут = 200h
+        norm_cols[9] = self._get_safe_float(
+            row, "sma_12000", 0.0
+        )  # было sma_60. 50 баров = 12000 минут = 200h
         norm_cols[10] = self._get_safe_float(row, "yang_zhang_30d", 0.0)  # было yang_zhang_720h
         norm_cols[11] = self._get_safe_float(row, "parkinson_48h", 0.0)  # было parkinson_24h
         norm_cols[12] = self._get_safe_float(row, "parkinson_7d", 0.0)  # было parkinson_168h
@@ -262,10 +285,18 @@ class MockMediator:
         units = self._coerce_finite(getattr(state, "units", 0.0), default=0.0)
         cash = self._coerce_finite(getattr(state, "cash", 0.0), default=0.0)
 
-        last_vol_imbalance = self._coerce_finite(getattr(state, "last_vol_imbalance", 0.0), default=0.0)
-        last_trade_intensity = self._coerce_finite(getattr(state, "last_trade_intensity", 0.0), default=0.0)
-        last_realized_spread = self._coerce_finite(getattr(state, "last_realized_spread", 0.0), default=0.0)
-        last_agent_fill_ratio = self._coerce_finite(getattr(state, "last_agent_fill_ratio", 0.0), default=0.0)
+        last_vol_imbalance = self._coerce_finite(
+            getattr(state, "last_vol_imbalance", 0.0), default=0.0
+        )
+        last_trade_intensity = self._coerce_finite(
+            getattr(state, "last_trade_intensity", 0.0), default=0.0
+        )
+        last_realized_spread = self._coerce_finite(
+            getattr(state, "last_realized_spread", 0.0), default=0.0
+        )
+        last_agent_fill_ratio = self._coerce_finite(
+            getattr(state, "last_agent_fill_ratio", 0.0), default=0.0
+        )
 
         fear_greed_value = self._get_safe_float(row, "fear_greed_value", 50.0)
         has_fear_greed = abs(fear_greed_value - 50.0) > 0.1
@@ -276,45 +307,52 @@ class MockMediator:
         risk_off_flag = fear_greed_value < 25.0
 
         token_id = getattr(state, "token_index", 0)
-        max_num_tokens = 1
-        num_tokens = 1
+        max_num_tokens = _MAX_TOKENS
+        num_tokens = _MAX_TOKENS
 
-        try:
-            build_observation_vector(
-                float(market_data["price"]),
-                float(market_data["prev_price"]),
-                float(market_data["log_volume_norm"]),
-                float(market_data["rel_volume"]),
-                float(indicators["ma5"]),
-                float(indicators["ma20"]),
-                float(indicators["rsi14"]),
-                float(indicators["macd"]),
-                float(indicators["macd_signal"]),
-                float(indicators["momentum"]),
-                float(indicators["atr"]),
-                float(indicators["cci"]),
-                float(indicators["obv"]),
-                float(indicators["bb_lower"]),
-                float(indicators["bb_upper"]),
-                float(is_high_importance),
-                float(time_since_event),
-                float(fear_greed_value),
-                bool(has_fear_greed),
-                bool(risk_off_flag),
-                float(cash),
-                float(units),
-                float(last_vol_imbalance),
-                float(last_trade_intensity),
-                float(last_realized_spread),
-                float(last_agent_fill_ratio),
-                int(token_id),
-                int(max_num_tokens),
-                int(num_tokens),
-                norm_cols_values,
-                obs,
-            )
-        except Exception:
-            return np.zeros(obs_shape, dtype=np.float32)
+        signal_pos = self._coerce_finite(getattr(state, "signal_pos", 0.0), default=0.0)
+        norm_cols_validity = np.ones(len(norm_cols_values), dtype=np.uint8)
+
+        # Named arguments, and no blanket except: the signature has grown
+        # (signal_pos, norm_cols_validity, enable_validity_flags) and a
+        # positional call used to raise TypeError into a handler that returned
+        # a zero vector, so the tests asserted on zeros instead of failing.
+        build_observation_vector(
+            price=float(market_data["price"]),
+            prev_price=float(market_data["prev_price"]),
+            log_volume_norm=float(market_data["log_volume_norm"]),
+            rel_volume=float(market_data["rel_volume"]),
+            ma5=float(indicators["ma5"]),
+            ma20=float(indicators["ma20"]),
+            rsi14=float(indicators["rsi14"]),
+            macd=float(indicators["macd"]),
+            macd_signal=float(indicators["macd_signal"]),
+            momentum=float(indicators["momentum"]),
+            atr=float(indicators["atr"]),
+            cci=float(indicators["cci"]),
+            obv=float(indicators["obv"]),
+            bb_lower=float(indicators["bb_lower"]),
+            bb_upper=float(indicators["bb_upper"]),
+            is_high_importance=float(is_high_importance),
+            time_since_event=float(time_since_event),
+            fear_greed_value=float(fear_greed_value),
+            has_fear_greed=bool(has_fear_greed),
+            risk_off_flag=bool(risk_off_flag),
+            cash=float(cash),
+            units=float(units),
+            signal_pos=float(signal_pos),
+            last_vol_imbalance=float(last_vol_imbalance),
+            last_trade_intensity=float(last_trade_intensity),
+            last_realized_spread=float(last_realized_spread),
+            last_agent_fill_ratio=float(last_agent_fill_ratio),
+            token_id=int(token_id),
+            max_num_tokens=int(max_num_tokens),
+            num_tokens=int(num_tokens),
+            norm_cols_values=norm_cols_values,
+            norm_cols_validity=norm_cols_validity,
+            enable_validity_flags=True,
+            out_features=obs,
+        )
 
         return obs
 
@@ -343,7 +381,9 @@ def test_observation_size_and_non_zero():
             "cvd_7d": [(i % 20) / 20.0 for i in range(200)],  # было cvd_168h
             "yang_zhang_48h": [0.01 + (i % 5) * 0.001 for i in range(200)],  # было yang_zhang_24h
             "yang_zhang_7d": [0.015 + (i % 7) * 0.001 for i in range(200)],  # было yang_zhang_168h
-            "garch_200h": [0.02 + (i % 3) * 0.002 for i in range(200)],  # было garch_12h. 42 бара = 10080 мин = 7d, минимум для GARCH на 4h
+            "garch_200h": [
+                0.02 + (i % 3) * 0.002 for i in range(200)
+            ],  # было garch_12h. 42 бара = 10080 мин = 7d, минимум для GARCH на 4h
             "garch_14d": [0.025 + (i % 4) * 0.002 for i in range(200)],  # было garch_24h
             "ret_12h": [(i % 15) * 0.0001 for i in range(200)],  # было ret_15m
             "ret_24h": [(i % 25) * 0.0002 for i in range(200)],  # было ret_60m
@@ -351,7 +391,7 @@ def test_observation_size_and_non_zero():
         }
     )
 
-    env = MockEnv(df=df, obs_size=43)
+    env = MockEnv(df=df, obs_size=_N_FEATURES)
     mediator = MockMediator(env)
 
     row = df.iloc[100]
@@ -361,7 +401,7 @@ def test_observation_size_and_non_zero():
     obs = mediator._build_observation(row=row, state=state, mark_price=mark_price)
 
     # Check size
-    assert obs.shape == (63,), f"Expected obs.shape=(63,), got {obs.shape}"
+    assert obs.shape == (_N_FEATURES,), f"Expected obs.shape=(_N_FEATURES,), got {obs.shape}"
 
     # Check that more than 35 values are non-zero (>60% should be populated)
     non_zero_count = np.count_nonzero(obs)
@@ -389,7 +429,9 @@ def test_technical_indicators_present():
             "cvd_7d": [0.3],  # было cvd_168h
             "yang_zhang_48h": [0.025],  # было yang_zhang_24h
             "yang_zhang_7d": [0.030],  # было yang_zhang_168h
-            "garch_200h": [0.028],  # было garch_12h. 42 бара = 10080 мин = 7d, минимум для GARCH на 4h
+            "garch_200h": [
+                0.028
+            ],  # было garch_12h. 42 бара = 10080 мин = 7d, минимум для GARCH на 4h
             "garch_14d": [0.032],  # было garch_24h
             "ret_12h": [0.001],  # было ret_15m
             "ret_24h": [0.002],  # было ret_60m
@@ -397,7 +439,7 @@ def test_technical_indicators_present():
         }
     )
 
-    env = MockEnv(df=df, obs_size=43)
+    env = MockEnv(df=df, obs_size=_N_FEATURES)
     mediator = MockMediator(env)
 
     row = df.iloc[0]
@@ -412,8 +454,9 @@ def test_technical_indicators_present():
     # The first value should be price
     assert obs[0] > 0, f"obs[0] should be price, got {obs[0]}"
 
-    # Check norm_cols positions (32-39 typically contain cvd, garch, yang_zhang)
-    norm_cols_region = obs[32:40]
+    # The first external columns carry cvd, yang_zhang, garch and the returns.
+    ext_start = _block_start("external")
+    norm_cols_region = obs[ext_start : ext_start + 8]
     non_zero_norm_cols = np.count_nonzero(norm_cols_region)
     assert non_zero_norm_cols >= 4, f"Expected >=4 non-zero norm_cols, got {non_zero_norm_cols}"
 
@@ -438,7 +481,9 @@ def test_cvd_garch_yangzhang_in_obs():
             "cvd_7d": [2.0],  # Non-zero value (было cvd_168h)
             "yang_zhang_48h": [0.05],  # Non-zero value (было yang_zhang_24h)
             "yang_zhang_7d": [0.06],  # было yang_zhang_168h
-            "garch_200h": [0.04],  # Non-zero value (было garch_12h). 42 бара = 10080 мин = 7d, минимум для GARCH на 4h
+            "garch_200h": [
+                0.04
+            ],  # Non-zero value (было garch_12h). 42 бара = 10080 мин = 7d, минимум для GARCH на 4h
             "garch_14d": [0.045],  # было garch_24h
             "ret_12h": [0.001],  # было ret_15m
             "ret_24h": [0.002],  # было ret_60m
@@ -446,7 +491,7 @@ def test_cvd_garch_yangzhang_in_obs():
         }
     )
 
-    env = MockEnv(df=df, obs_size=43)
+    env = MockEnv(df=df, obs_size=_N_FEATURES)
     mediator = MockMediator(env)
 
     row = df.iloc[0]
@@ -459,11 +504,15 @@ def test_cvd_garch_yangzhang_in_obs():
     norm_cols_region = obs[32:40]
 
     # These should be non-zero after tanh normalization
-    assert not np.allclose(norm_cols_region, 0.0), "norm_cols should contain non-zero values from indicators"
+    assert not np.allclose(
+        norm_cols_region, 0.0
+    ), "norm_cols should contain non-zero values from indicators"
 
     # Check that at least cvd, garch, yang_zhang contribute
     # (values should be in reasonable range after passing through obs_builder)
-    assert np.any(np.abs(norm_cols_region) > 0.01), "Expected significant values in norm_cols from indicators"
+    assert np.any(
+        np.abs(norm_cols_region) > 0.01
+    ), "Expected significant values in norm_cols from indicators"
 
     print(f"✓ Test 3 passed: cvd_24h, garch_7d, yang_zhang_48h present in obs")
 
@@ -486,9 +535,15 @@ def test_observations_in_training_env():
             "rsi": [50 + (i % 40) for i in range(n_steps)],
             "cvd_24h": [np.sin(i * 0.05) * 0.5 for i in range(n_steps)],
             "cvd_7d": [np.cos(i * 0.02) * 0.3 for i in range(n_steps)],  # было cvd_168h
-            "yang_zhang_48h": [0.02 + (i % 10) * 0.001 for i in range(n_steps)],  # было yang_zhang_24h
-            "yang_zhang_7d": [0.025 + (i % 15) * 0.001 for i in range(n_steps)],  # было yang_zhang_168h
-            "garch_200h": [0.03 + (i % 5) * 0.002 for i in range(n_steps)],  # было garch_12h. 42 бара = 10080 мин = 7d, минимум для GARCH на 4h
+            "yang_zhang_48h": [
+                0.02 + (i % 10) * 0.001 for i in range(n_steps)
+            ],  # было yang_zhang_24h
+            "yang_zhang_7d": [
+                0.025 + (i % 15) * 0.001 for i in range(n_steps)
+            ],  # было yang_zhang_168h
+            "garch_200h": [
+                0.03 + (i % 5) * 0.002 for i in range(n_steps)
+            ],  # было garch_12h. 42 бара = 10080 мин = 7d, минимум для GARCH на 4h
             "garch_14d": [0.035 + (i % 8) * 0.002 for i in range(n_steps)],  # было garch_24h
             "ret_12h": [(i % 20) * 0.0001 for i in range(n_steps)],  # было ret_15m
             "ret_24h": [(i % 30) * 0.0002 for i in range(n_steps)],  # было ret_60m
@@ -496,7 +551,7 @@ def test_observations_in_training_env():
         }
     )
 
-    env = MockEnv(df=df, obs_size=43)
+    env = MockEnv(df=df, obs_size=_N_FEATURES)
     mediator = MockMediator(env)
 
     # Test multiple steps
@@ -508,7 +563,9 @@ def test_observations_in_training_env():
 
         obs = mediator._build_observation(row=row, state=state, mark_price=mark_price)
 
-        assert obs.shape == (63,), f"Step {step_idx}: Expected shape (63,), got {obs.shape}"
+        assert obs.shape == (
+            _N_FEATURES,
+        ), f"Step {step_idx}: Expected shape (_N_FEATURES,), got {obs.shape}"
         non_zero_count = np.count_nonzero(obs)
         assert non_zero_count > 15, f"Step {step_idx}: Expected >15 non-zero, got {non_zero_count}"
 
@@ -531,7 +588,7 @@ def test_observation_works_without_indicators():
         }
     )
 
-    env = MockEnv(df=df, obs_size=43)
+    env = MockEnv(df=df, obs_size=_N_FEATURES)
     mediator = MockMediator(env)
 
     row = df.iloc[0]
@@ -541,14 +598,16 @@ def test_observation_works_without_indicators():
     obs = mediator._build_observation(row=row, state=state, mark_price=mark_price)
 
     # Should still return correct size (fallback to defaults)
-    assert obs.shape == (63,), f"Expected shape (63,), got {obs.shape}"
+    assert obs.shape == (_N_FEATURES,), f"Expected shape (_N_FEATURES,), got {obs.shape}"
 
     # Should have at least some basic values (price, cash, units)
     assert obs[0] > 0, "obs[0] (price) should be non-zero"
 
     # May have fewer non-zero values, but should not crash
     non_zero_count = np.count_nonzero(obs)
-    assert non_zero_count >= 3, f"Expected >=3 non-zero values (price, volumes, state), got {non_zero_count}"
+    assert (
+        non_zero_count >= 3
+    ), f"Expected >=3 non-zero values (price, volumes, state), got {non_zero_count}"
 
     print(f"✓ Test 5 passed: Fallback works without indicators")
 

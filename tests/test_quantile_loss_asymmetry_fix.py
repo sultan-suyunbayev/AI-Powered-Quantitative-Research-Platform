@@ -20,6 +20,7 @@ Reference:
 import math
 
 import pytest
+
 pytest.importorskip("torch")
 
 import test_distributional_ppo_raw_outliers  # noqa: F401  # ensure RL stubs
@@ -72,18 +73,21 @@ def test_quantile_loss_asymmetry_coefficient_correctness():
     # - loss_under should be 0.25 * 0.5 = 0.125
     # - loss_over should be 0.75 * 0.5 = 0.375
 
-    assert math.isclose(loss_under.item(), 0.125, abs_tol=1e-6), \
-        f"Underestimation loss should be 0.125, got {loss_under.item()}"
+    assert math.isclose(
+        loss_under.item(), 0.125, abs_tol=1e-6
+    ), f"Underestimation loss should be 0.125, got {loss_under.item()}"
 
-    assert math.isclose(loss_over.item(), 0.375, abs_tol=1e-6), \
-        f"Overestimation loss should be 0.375, got {loss_over.item()}"
+    assert math.isclose(
+        loss_over.item(), 0.375, abs_tol=1e-6
+    ), f"Overestimation loss should be 0.375, got {loss_over.item()}"
 
     # Ratio should be (1-τ)/τ = 0.75/0.25 = 3.0
     ratio = loss_over.item() / loss_under.item()
     expected_ratio = (1 - 0.25) / 0.25
 
-    assert math.isclose(ratio, expected_ratio, rel_tol=1e-5), \
-        f"Loss ratio should be {expected_ratio}, got {ratio}"
+    assert math.isclose(
+        ratio, expected_ratio, rel_tol=1e-5
+    ), f"Loss ratio should be {expected_ratio}, got {ratio}"
 
 
 def test_quantile_loss_asymmetry_multiple_tau():
@@ -130,8 +134,9 @@ def test_quantile_loss_asymmetry_multiple_tau():
         expected_ratio = (1 - tau) / tau
         actual_ratio = loss_over.item() / loss_under.item()
 
-        assert math.isclose(actual_ratio, expected_ratio, rel_tol=1e-5), \
-            f"For τ={tau}: expected ratio {expected_ratio}, got {actual_ratio}"
+        assert math.isclose(
+            actual_ratio, expected_ratio, rel_tol=1e-5
+        ), f"For τ={tau}: expected ratio {expected_ratio}, got {actual_ratio}"
 
 
 def test_quantile_loss_median_symmetry():
@@ -170,8 +175,9 @@ def test_quantile_loss_median_symmetry():
     )
 
     # For median, losses should be equal
-    assert math.isclose(loss_under.item(), loss_over.item(), rel_tol=1e-6), \
-        f"Median should have symmetric losses: {loss_under.item()} vs {loss_over.item()}"
+    assert math.isclose(
+        loss_under.item(), loss_over.item(), rel_tol=1e-6
+    ), f"Median should have symmetric losses: {loss_under.item()} vs {loss_over.item()}"
 
 
 def test_quantile_loss_gradient_direction():
@@ -234,8 +240,9 @@ def test_quantile_loss_gradient_direction():
     # But high τ should have stronger gradient (more aggressive)
     assert grad_low < 0, f"Low quantile gradient should be negative, got {grad_low}"
     assert grad_high < 0, f"High quantile gradient should be negative, got {grad_high}"
-    assert abs(grad_high) > abs(grad_low), \
-        f"High quantile should have stronger gradient: {grad_high} vs {grad_low}"
+    assert abs(grad_high) > abs(
+        grad_low
+    ), f"High quantile should have stronger gradient: {grad_high} vs {grad_low}"
 
 
 def test_quantile_loss_training_convergence():
@@ -267,38 +274,46 @@ def test_quantile_loss_training_convergence():
     torch.manual_seed(42)
     targets = torch.tensor([-1.0, -0.5, 0.0, 0.5, 1.0], dtype=torch.float32).reshape(-1, 1)
 
-    # Initialize predictions at zero
-    predicted = torch.nn.Parameter(torch.zeros((5, 3), dtype=torch.float32))
+    # ONE set of quantiles shared across the batch. Giving every row its own
+    # row of quantiles makes each row fit its single target, and all three
+    # quantiles collapse onto that value -- averaging the rows afterwards then
+    # returns the mean of the targets rather than their quantiles.
+    shared_quantiles = torch.nn.Parameter(torch.zeros(3, dtype=torch.float32))
 
-    optimizer = torch.optim.Adam([predicted], lr=0.1)
+    optimizer = torch.optim.Adam([shared_quantiles], lr=0.05)
 
     # Train for multiple steps
-    for _ in range(200):
+    for _ in range(2000):
         optimizer.zero_grad()
+        predicted = shared_quantiles.unsqueeze(0).expand(targets.shape[0], -1)
         loss = DistributionalPPO._quantile_huber_loss(algo, predicted, targets)
         loss.backward()
         optimizer.step()
 
-    # Check that quantiles are ordered correctly
     with torch.no_grad():
-        mean_quantiles = predicted.mean(dim=0)
+        mean_quantiles = shared_quantiles.detach()
 
     # 25th percentile should be < 50th < 75th
-    assert mean_quantiles[0] < mean_quantiles[1], \
-        f"25th percentile should be < 50th: {mean_quantiles[0]} vs {mean_quantiles[1]}"
-    assert mean_quantiles[1] < mean_quantiles[2], \
-        f"50th percentile should be < 75th: {mean_quantiles[1]} vs {mean_quantiles[2]}"
+    assert (
+        mean_quantiles[0] < mean_quantiles[1]
+    ), f"25th percentile should be < 50th: {mean_quantiles[0]} vs {mean_quantiles[1]}"
+    assert (
+        mean_quantiles[1] < mean_quantiles[2]
+    ), f"50th percentile should be < 75th: {mean_quantiles[1]} vs {mean_quantiles[2]}"
 
     # For uniform distribution from -1 to 1:
     # - 25th percentile ≈ -0.5
     # - 50th percentile ≈ 0.0
     # - 75th percentile ≈ 0.5
-    assert math.isclose(mean_quantiles[0].item(), -0.5, abs_tol=0.2), \
-        f"25th percentile should be near -0.5, got {mean_quantiles[0].item()}"
-    assert math.isclose(mean_quantiles[1].item(), 0.0, abs_tol=0.2), \
-        f"50th percentile should be near 0.0, got {mean_quantiles[1].item()}"
-    assert math.isclose(mean_quantiles[2].item(), 0.5, abs_tol=0.2), \
-        f"75th percentile should be near 0.5, got {mean_quantiles[2].item()}"
+    assert math.isclose(
+        mean_quantiles[0].item(), -0.5, abs_tol=0.2
+    ), f"25th percentile should be near -0.5, got {mean_quantiles[0].item()}"
+    assert math.isclose(
+        mean_quantiles[1].item(), 0.0, abs_tol=0.2
+    ), f"50th percentile should be near 0.0, got {mean_quantiles[1].item()}"
+    assert math.isclose(
+        mean_quantiles[2].item(), 0.5, abs_tol=0.2
+    ), f"75th percentile should be near 0.5, got {mean_quantiles[2].item()}"
 
 
 def test_quantile_loss_huber_threshold():
@@ -349,10 +364,12 @@ def test_quantile_loss_huber_threshold():
     # Total: 0.5 * 1.5 = 0.75
     expected_large = 0.5 * (1.0 * (2.0 - 0.5))
 
-    assert math.isclose(loss_small.item(), expected_small, abs_tol=1e-6), \
-        f"Small error loss should be {expected_small}, got {loss_small.item()}"
-    assert math.isclose(loss_large.item(), expected_large, abs_tol=1e-6), \
-        f"Large error loss should be {expected_large}, got {loss_large.item()}"
+    assert math.isclose(
+        loss_small.item(), expected_small, abs_tol=1e-6
+    ), f"Small error loss should be {expected_small}, got {loss_small.item()}"
+    assert math.isclose(
+        loss_large.item(), expected_large, abs_tol=1e-6
+    ), f"Large error loss should be {expected_large}, got {loss_large.item()}"
 
 
 def test_quantile_loss_batch_independence():
@@ -379,9 +396,7 @@ def test_quantile_loss_batch_independence():
 
     # Sample 1: already at target
     # Sample 2: far from target
-    predicted = torch.tensor(
-        [[0.0, 0.0], [5.0, 5.0]], dtype=torch.float32, requires_grad=True
-    )
+    predicted = torch.tensor([[0.0, 0.0], [5.0, 5.0]], dtype=torch.float32, requires_grad=True)
     targets = torch.tensor([0.0, 0.0], dtype=torch.float32).reshape(-1, 1)
 
     loss = DistributionalPPO._quantile_huber_loss(algo, predicted, targets)
@@ -392,7 +407,7 @@ def test_quantile_loss_batch_independence():
     grad_first = predicted.grad[0].abs().max().item()
     grad_second = predicted.grad[1].abs().max().item()
 
-    assert math.isclose(grad_first, 0.0, abs_tol=1e-6), \
-        f"First sample gradient should be near 0, got {grad_first}"
-    assert grad_second > 0.1, \
-        f"Second sample gradient should be large, got {grad_second}"
+    assert math.isclose(
+        grad_first, 0.0, abs_tol=1e-6
+    ), f"First sample gradient should be near 0, got {grad_first}"
+    assert grad_second > 0.1, f"Second sample gradient should be large, got {grad_second}"

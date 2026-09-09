@@ -26,8 +26,21 @@ class TestRSIFixVerification:
 
         # Price pattern: First bar +10%, then small oscillations
         prices = [
-            100.0, 110.0, 110.5, 110.0, 110.5, 110.0, 110.5, 110.0,
-            110.5, 110.0, 110.5, 110.0, 110.5, 110.0, 110.5,
+            100.0,
+            110.0,
+            110.5,
+            110.0,
+            110.5,
+            110.0,
+            110.5,
+            110.0,
+            110.5,
+            110.0,
+            110.5,
+            110.0,
+            110.5,
+            110.0,
+            110.5,
         ]
 
         feats_list = []
@@ -53,9 +66,9 @@ class TestRSIFixVerification:
         expected_rsi = 78.8
 
         # AFTER FIX: RSI should be close to expected value
-        assert abs(rsi_14 - expected_rsi) < 5.0, (
-            f"RSI={rsi_14:.1f} differs from expected {expected_rsi:.1f} by more than 5 points"
-        )
+        assert (
+            abs(rsi_14 - expected_rsi) < 5.0
+        ), f"RSI={rsi_14:.1f} differs from expected {expected_rsi:.1f} by more than 5 points"
 
         print(f"✓ RSI correctly initialized: {rsi_14:.1f} (expected: {expected_rsi:.1f})")
 
@@ -159,11 +172,15 @@ class TestRSIFixVerification:
             gains = []
             losses = []
             for i in range(1, len(prices)):
-                delta = prices[i] - prices[i-1]
+                delta = prices[i] - prices[i - 1]
                 gains.append(max(0, delta))
                 losses.append(max(0, -delta))
 
-            rsi_values = [math.nan] * (period + 1)  # First 14 are NaN
+            # The first RSI uses the 14 deltas between prices[0..14], so it
+            # belongs at index 14: pad with `period` NaNs, not period + 1.
+            # One extra NaN shifted the whole series and put the comparison
+            # a bar out of step.
+            rsi_values = [math.nan] * period
 
             # Initialize with SMA
             avg_gain = sum(gains[:period]) / period
@@ -202,9 +219,9 @@ class TestRSIFixVerification:
             act = rsi_actual[i]
             if not math.isnan(ref) and not math.isnan(act):
                 diff = abs(ref - act)
-                assert diff < 0.1, (
-                    f"RSI at bar {i}: reference={ref:.2f}, actual={act:.2f}, diff={diff:.2f}"
-                )
+                assert (
+                    diff < 0.1
+                ), f"RSI at bar {i}: reference={ref:.2f}, actual={act:.2f}, diff={diff:.2f}"
 
         print(f"✓ RSI matches reference implementation (max diff < 0.1)")
 
@@ -224,11 +241,13 @@ class TestCCIFixVerification:
         # Simulate bars where close != TP
         bars = []
         for i in range(20):
-            bars.append({
-                "high": 102.0,
-                "low": 98.0,
-                "close": 98.5,  # Close near low
-            })
+            bars.append(
+                {
+                    "high": 102.0,
+                    "low": 98.0,
+                    "close": 98.5,  # Close near low
+                }
+            )
 
         # Compute TP
         tp_values = [(b["high"] + b["low"] + b["close"]) / 3 for b in bars]
@@ -236,7 +255,9 @@ class TestCCIFixVerification:
         # CORRECT: Use SMA(TP) as baseline
         sma_tp = sum(tp_values) / 20
         mean_dev_correct = sum(abs(tp - sma_tp) for tp in tp_values) / 20
-        cci_correct = (tp_values[-1] - sma_tp) / (0.015 * mean_dev_correct) if mean_dev_correct > 0 else 0
+        cci_correct = (
+            (tp_values[-1] - sma_tp) / (0.015 * mean_dev_correct) if mean_dev_correct > 0 else 0
+        )
 
         # Expected: TP = 99.5, SMA(TP) = 99.5, CCI ≈ 0
         expected_tp = (102.0 + 98.0 + 98.5) / 3
@@ -250,31 +271,39 @@ class TestCCIFixVerification:
         # After compilation, actual CCI from MarketSimulator should match this
 
     def test_cci_no_sign_inversion(self):
-        """Verify CCI fix prevents sign inversion."""
-        # Oscillating bars
+        """CCI takes the sign of (TP - SMA(TP)), never the opposite.
+
+        The oscillating series this used to build does NOT have identical
+        typical prices -- alternating closes of 101.5 and 98.5 give TPs of
+        100.5 and 99.5 -- so the assertion that the last TP equalled their mean
+        could not hold. Check the two cases that matter instead.
+        """
+        # Identical bars: TP == SMA(TP), and the deviation is zero.
+        flat = [{"high": 102.0, "low": 98.0, "close": 100.0} for _ in range(20)]
+        flat_tps = [(b["high"] + b["low"] + b["close"]) / 3 for b in flat]
+        flat_sma = sum(flat_tps) / len(flat_tps)
+        assert abs(flat_tps[-1] - flat_sma) < 1e-9
+        assert sum(abs(tp - flat_sma) for tp in flat_tps) / len(flat_tps) < 1e-9
+
+        # Oscillating bars: the last TP is above the mean, so CCI is positive.
         bars = []
         for i in range(20):
-            if i % 2 == 0:
-                bars.append({"high": 102.0, "low": 98.0, "close": 101.5})
-            else:
-                bars.append({"high": 102.0, "low": 98.0, "close": 98.5})
+            close = 101.5 if i % 2 == 0 else 98.5
+            bars.append({"high": 102.0, "low": 98.0, "close": close})
 
         tp_values = [(b["high"] + b["low"] + b["close"]) / 3 for b in bars]
+        tp_last = tp_values[-1]
+        sma_tp = sum(tp_values) / len(tp_values)
+        mean_dev = sum(abs(tp - sma_tp) for tp in tp_values) / len(tp_values)
 
-        # Last bar: close=101.5, TP=100.5
-        tp_last = (102.0 + 98.0 + 101.5) / 3
+        assert mean_dev > 0.0, "oscillating closes must give a non-zero deviation"
+        cci = (tp_last - sma_tp) / (0.015 * mean_dev)
 
-        # CORRECT: SMA(TP) = 100.5 (all TPs are identical)
-        sma_tp = sum(tp_values) / 20
+        print(f"✓ CCI sign test: TP={tp_last:.2f}, SMA(TP)={sma_tp:.2f}, CCI={cci:.2f}")
 
-        # Mean deviation = 0 (all TPs identical)
-        mean_dev = sum(abs(tp - sma_tp) for tp in tp_values) / 20
-
-        # CCI = (100.5 - 100.5) / (0.015 * 0) = undefined or 0
-        print(f"✓ CCI sign inversion test: TP={tp_last:.2f}, SMA(TP)={sma_tp:.2f}")
-        print(f"   Mean_dev={mean_dev:.4f} (all TPs identical)")
-
-        assert abs(tp_last - sma_tp) < 0.01, "TP should equal SMA(TP) for identical bars"
+        # The last bar closes low, so its TP sits below the mean: CCI negative.
+        assert tp_last < sma_tp
+        assert cci < 0.0, "CCI must follow the sign of TP - SMA(TP)"
 
 
 if __name__ == "__main__":

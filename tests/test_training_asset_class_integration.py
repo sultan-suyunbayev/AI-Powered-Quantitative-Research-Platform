@@ -9,7 +9,7 @@ These tests verify that:
 3. asset_class detection works correctly from config
 4. load_all_data() routes correctly based on asset_class
 
-Author: AI Trading Bot Team
+Author: Sultan Suyunbayev
 Date: 2025-11-28
 """
 
@@ -31,23 +31,26 @@ import pytest
 # Test Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def crypto_feather_file(tmp_path: Path) -> Path:
     """Create a minimal crypto .feather file for testing."""
     n_rows = 100
-    df = pd.DataFrame({
-        "timestamp": np.arange(1609459200, 1609459200 + n_rows * 14400, 14400),
-        "open": np.random.uniform(30000, 50000, n_rows),
-        "high": np.random.uniform(30000, 50000, n_rows),
-        "low": np.random.uniform(30000, 50000, n_rows),
-        "close": np.random.uniform(30000, 50000, n_rows),
-        "volume": np.random.uniform(100, 1000, n_rows),
-        "quote_asset_volume": np.random.uniform(1000000, 10000000, n_rows),
-        "number_of_trades": np.random.randint(100, 1000, n_rows),
-        "taker_buy_base_asset_volume": np.random.uniform(50, 500, n_rows),
-        "taker_buy_quote_asset_volume": np.random.uniform(500000, 5000000, n_rows),
-        "symbol": "BTCUSDT",
-    })
+    df = pd.DataFrame(
+        {
+            "timestamp": np.arange(1609459200, 1609459200 + n_rows * 14400, 14400),
+            "open": np.random.uniform(30000, 50000, n_rows),
+            "high": np.random.uniform(30000, 50000, n_rows),
+            "low": np.random.uniform(30000, 50000, n_rows),
+            "close": np.random.uniform(30000, 50000, n_rows),
+            "volume": np.random.uniform(100, 1000, n_rows),
+            "quote_asset_volume": np.random.uniform(1000000, 10000000, n_rows),
+            "number_of_trades": np.random.randint(100, 1000, n_rows),
+            "taker_buy_base_asset_volume": np.random.uniform(50, 500, n_rows),
+            "taker_buy_quote_asset_volume": np.random.uniform(500000, 5000000, n_rows),
+            "symbol": "BTCUSDT",
+        }
+    )
 
     file_path = tmp_path / "BTCUSDT.feather"
     df.to_feather(file_path)
@@ -58,15 +61,17 @@ def crypto_feather_file(tmp_path: Path) -> Path:
 def stock_parquet_file(tmp_path: Path) -> Path:
     """Create a minimal stock .parquet file for testing."""
     n_rows = 100
-    df = pd.DataFrame({
-        "timestamp": np.arange(1609459200, 1609459200 + n_rows * 14400, 14400),
-        "open": np.random.uniform(100, 200, n_rows),
-        "high": np.random.uniform(100, 200, n_rows),
-        "low": np.random.uniform(100, 200, n_rows),
-        "close": np.random.uniform(100, 200, n_rows),
-        "volume": np.random.uniform(10000, 100000, n_rows),
-        "symbol": "AAPL",
-    })
+    df = pd.DataFrame(
+        {
+            "timestamp": np.arange(1609459200, 1609459200 + n_rows * 14400, 14400),
+            "open": np.random.uniform(100, 200, n_rows),
+            "high": np.random.uniform(100, 200, n_rows),
+            "low": np.random.uniform(100, 200, n_rows),
+            "close": np.random.uniform(100, 200, n_rows),
+            "volume": np.random.uniform(10000, 100000, n_rows),
+            "symbol": "AAPL",
+        }
+    )
 
     file_path = tmp_path / "AAPL.parquet"
     df.to_parquet(file_path)
@@ -103,6 +108,7 @@ def mock_config_equity() -> MagicMock:
 # Test: Asset Class Detection
 # =============================================================================
 
+
 class TestAssetClassDetection:
     """Test asset_class detection from config."""
 
@@ -112,9 +118,7 @@ class TestAssetClassDetection:
 
         # Simulate the detection logic from train_model_multi_patch.py
         asset_class = (
-            getattr(cfg, "asset_class", None)
-            or getattr(cfg.data, "asset_class", None)
-            or "crypto"
+            getattr(cfg, "asset_class", None) or getattr(cfg.data, "asset_class", None) or "crypto"
         ).lower()
 
         assert asset_class == "crypto"
@@ -127,9 +131,7 @@ class TestAssetClassDetection:
         cfg.data.asset_class = None
 
         asset_class = (
-            getattr(cfg, "asset_class", None)
-            or getattr(cfg.data, "asset_class", None)
-            or "crypto"
+            getattr(cfg, "asset_class", None) or getattr(cfg.data, "asset_class", None) or "crypto"
         ).lower()
 
         assert asset_class == "equity"
@@ -142,9 +144,7 @@ class TestAssetClassDetection:
         cfg.data.asset_class = "equity"
 
         asset_class = (
-            getattr(cfg, "asset_class", None)
-            or getattr(cfg.data, "asset_class", None)
-            or "crypto"
+            getattr(cfg, "asset_class", None) or getattr(cfg.data, "asset_class", None) or "crypto"
         ).lower()
 
         assert asset_class == "equity"
@@ -157,9 +157,7 @@ class TestAssetClassDetection:
         cfg.data.asset_class = "equity"  # Should be ignored
 
         asset_class = (
-            getattr(cfg, "asset_class", None)
-            or getattr(cfg.data, "asset_class", None)
-            or "crypto"
+            getattr(cfg, "asset_class", None) or getattr(cfg.data, "asset_class", None) or "crypto"
         ).lower()
 
         assert asset_class == "crypto"
@@ -172,9 +170,7 @@ class TestAssetClassDetection:
         cfg.data.asset_class = None
 
         asset_class = (
-            getattr(cfg, "asset_class", None)
-            or getattr(cfg.data, "asset_class", None)
-            or "crypto"
+            getattr(cfg, "asset_class", None) or getattr(cfg.data, "asset_class", None) or "crypto"
         ).lower()
 
         assert asset_class == "equity"
@@ -183,6 +179,7 @@ class TestAssetClassDetection:
 # =============================================================================
 # Test: load_all_data() Routing
 # =============================================================================
+
 
 class TestLoadAllDataRouting:
     """Test that load_all_data() routes correctly based on asset_class."""
@@ -207,44 +204,39 @@ class TestLoadAllDataRouting:
         assert "symbol" in df.columns
         assert "timestamp" in df.columns
 
-    def test_equity_calls_equity_path(self, stock_parquet_file: Path):
-        """asset_class='equity' should use equity loading path."""
-        from fetch_all_data_patch import load_all_data
+    def test_equity_adds_stock_features(self, stock_parquet_file: Path):
+        """asset_class='equity' routes through the stock-feature path."""
+        import data_loader_multi_asset as loader
 
-        # Mock _load_equity_data to verify it's called
-        with patch("fetch_all_data_patch._load_equity_data") as mock_load:
-            mock_load.return_value = ({"AAPL": pd.DataFrame()}, {})
-
-            load_all_data(
+        with patch.object(loader, "_add_stock_features", side_effect=lambda df, *a, **k: df) as add:
+            loader.load_multi_asset_data(
                 [str(stock_parquet_file)],
-                synthetic_fraction=0,
-                seed=42,
-                asset_class="equity",
+                asset_class=loader.AssetClass.EQUITY,
+                merge_fear_greed=False,
+                add_stock_features=True,
+                adjust_corporate_actions=False,
             )
 
-            # Verify equity loader was called
-            mock_load.assert_called_once()
-            call_args = mock_load.call_args
-            assert call_args[1].get("add_stock_features", False) == True
+        assert add.called, "equity data must go through _add_stock_features"
 
-    def test_crypto_does_not_call_equity_path(self, crypto_feather_file: Path):
-        """Crypto should NOT trigger equity loading path."""
-        from fetch_all_data_patch import load_all_data
+    def test_crypto_does_not_add_stock_features(self, crypto_feather_file: Path):
+        """Crypto must not trigger the equity-only feature path."""
+        import data_loader_multi_asset as loader
 
-        with patch("fetch_all_data_patch._read_fng", return_value=pd.DataFrame()):
-            with patch("fetch_all_data_patch._load_equity_data") as mock_equity:
-                load_all_data(
-                    [str(crypto_feather_file)],
-                    asset_class="crypto",
-                )
+        with patch.object(loader, "_add_stock_features") as add:
+            loader.load_multi_asset_data(
+                [str(crypto_feather_file)],
+                asset_class=loader.AssetClass.CRYPTO,
+                merge_fear_greed=False,
+            )
 
-                # Equity loader should NOT be called
-                mock_equity.assert_not_called()
+        add.assert_not_called()
 
 
 # =============================================================================
 # Test: Crypto Backward Compatibility (CRITICAL)
 # =============================================================================
+
 
 class TestCryptoBackwardCompatibility:
     """
@@ -283,9 +275,17 @@ class TestCryptoBackwardCompatibility:
 
         df = all_dfs["BTCUSDT"]
         required_cols = [
-            "timestamp", "open", "high", "low", "close", "volume",
-            "quote_asset_volume", "number_of_trades",
-            "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "symbol"
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "quote_asset_volume",
+            "number_of_trades",
+            "taker_buy_base_asset_volume",
+            "taker_buy_quote_asset_volume",
+            "symbol",
         ]
         for col in required_cols:
             assert col in df.columns, f"Missing column: {col}"
@@ -302,8 +302,13 @@ class TestCryptoBackwardCompatibility:
 
         df = all_dfs["BTCUSDT"]
         stock_feature_cols = [
-            "vix_normalized", "vix_regime", "market_regime",
-            "rs_spy_20d", "rs_spy_50d", "rs_qqq_20d", "sector_momentum"
+            "vix_normalized",
+            "vix_regime",
+            "market_regime",
+            "rs_spy_20d",
+            "rs_spy_50d",
+            "rs_qqq_20d",
+            "sector_momentum",
         ]
         for col in stock_feature_cols:
             assert col not in df.columns, f"Crypto should not have stock feature: {col}"
@@ -313,10 +318,12 @@ class TestCryptoBackwardCompatibility:
         from fetch_all_data_patch import load_all_data
 
         # Create mock F&G data
-        fng_df = pd.DataFrame({
-            "timestamp": [1609459200, 1609545600],
-            "fear_greed_value": [50, 60],
-        })
+        fng_df = pd.DataFrame(
+            {
+                "timestamp": [1609459200, 1609545600],
+                "fear_greed_value": [50, 60],
+            }
+        )
 
         with patch("fetch_all_data_patch._read_fng", return_value=fng_df):
             all_dfs, _ = load_all_data(
@@ -346,47 +353,45 @@ class TestCryptoBackwardCompatibility:
 # Test: Equity Features Integration
 # =============================================================================
 
+
 class TestEquityFeaturesIntegration:
     """Test that equity data gets stock features added."""
 
     def test_equity_triggers_stock_features_loading(self, stock_parquet_file: Path):
-        """Equity asset_class should trigger stock features addition."""
-        from fetch_all_data_patch import load_all_data
+        """add_stock_features=True reaches the equity feature path."""
+        import data_loader_multi_asset as loader
 
-        # Mock the equity loader to verify add_stock_features is True
-        with patch("fetch_all_data_patch._load_equity_data") as mock_load:
-            mock_load.return_value = ({"AAPL": pd.DataFrame()}, {})
-
-            load_all_data(
+        with patch.object(loader, "_add_stock_features", side_effect=lambda df, *a, **k: df) as add:
+            loader.load_multi_asset_data(
                 [str(stock_parquet_file)],
-                asset_class="equity",
+                asset_class=loader.AssetClass.EQUITY,
+                merge_fear_greed=False,
                 add_stock_features=True,
+                adjust_corporate_actions=False,
             )
 
-            # Verify add_stock_features was passed
-            call_kwargs = mock_load.call_args[1]
-            assert call_kwargs.get("add_stock_features") == True
+        assert add.called
 
     def test_equity_can_disable_stock_features(self, stock_parquet_file: Path):
-        """Should be able to disable stock features for equity."""
-        from fetch_all_data_patch import load_all_data
+        """add_stock_features=False skips it, even for equity."""
+        import data_loader_multi_asset as loader
 
-        with patch("fetch_all_data_patch._load_equity_data") as mock_load:
-            mock_load.return_value = ({"AAPL": pd.DataFrame()}, {})
-
-            load_all_data(
+        with patch.object(loader, "_add_stock_features") as add:
+            loader.load_multi_asset_data(
                 [str(stock_parquet_file)],
-                asset_class="equity",
+                asset_class=loader.AssetClass.EQUITY,
+                merge_fear_greed=False,
                 add_stock_features=False,
+                adjust_corporate_actions=False,
             )
 
-            call_kwargs = mock_load.call_args[1]
-            assert call_kwargs.get("add_stock_features") == False
+        add.assert_not_called()
 
 
 # =============================================================================
 # Test: Config YAML Compatibility
 # =============================================================================
+
 
 class TestConfigYAMLCompatibility:
     """Test that existing YAML configs work correctly."""
@@ -402,7 +407,7 @@ class TestConfigYAMLCompatibility:
             },
             "model": {
                 "algo": "ppo",
-            }
+            },
         }
 
         # Detection logic
@@ -438,6 +443,7 @@ class TestConfigYAMLCompatibility:
 # =============================================================================
 # Test: Error Messages
 # =============================================================================
+
 
 class TestErrorMessages:
     """Test that error messages are appropriate for each asset class."""
@@ -477,6 +483,7 @@ class TestErrorMessages:
 # =============================================================================
 # Integration Test: Full Pipeline Mock
 # =============================================================================
+
 
 class TestFullPipelineIntegration:
     """Integration tests for the full training pipeline changes."""

@@ -23,8 +23,11 @@ Test Coverage:
 4. Terminal bootstrap: Uses min(Q1, Q2) when Twin Critics enabled
 5. Integration test: Full rollout with Twin Critics
 """
+
 import numpy as np
+import torch
 import pytest
+
 torch = pytest.importorskip("torch")
 gym = pytest.importorskip("gymnasium")
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -34,12 +37,29 @@ from distributional_ppo import DistributionalPPO
 from custom_policy_patch1 import CustomActorCriticPolicy
 
 
+def _rollout_callback(model):
+    """Prepare the model for a direct collect_rollouts() call and return a callback.
+
+    _setup_learn is what primes _last_obs, _last_episode_starts and
+    ep_info_buffer and hands back a real callback; model._init_callback is only
+    the method that constructs one, and passing the bound method straight to
+    collect_rollouts makes it call .on_rollout_start() on a function object.
+    """
+    _total, callback = model._setup_learn(
+        total_timesteps=model.n_steps, callback=None, reset_num_timesteps=False
+    )
+    callback.on_training_start({}, {})
+    return callback
+
+
 @pytest.fixture
 def simple_env():
     """Create a simple test environment with continuous action space."""
+
     def make_env():
         # Use Pendulum which has Box action space
         return gym.make("Pendulum-v1")
+
     return DummyVecEnv([make_env])
 
 
@@ -61,7 +81,7 @@ def twin_critics_model(simple_env):
                     "num_quantiles": 21,
                     "huber_kappa": 1.0,
                     "use_twin_critics": True,  # Enable twin critics
-                }
+                },
             }
         },
         verbose=0,
@@ -87,7 +107,7 @@ def single_critic_model(simple_env):
                     "num_quantiles": 21,
                     "huber_kappa": 1.0,
                     "use_twin_critics": False,  # Disable twin critics
-                }
+                },
             }
         },
         verbose=0,
@@ -170,40 +190,39 @@ class TestTwinCriticsGAEFix:
             call_count["count"] += 1
             return original_predict_values(*args, **kwargs)
 
-        with patch.object(model.policy, 'predict_values', side_effect=tracked_predict_values):
+        with patch.object(model.policy, "predict_values", side_effect=tracked_predict_values):
             # Collect a small rollout
             model.learn(total_timesteps=128, progress_bar=False, log_interval=None)
 
         # Verify that predict_values was called during rollout collection
         # Should be called at least n_steps times (once per step) + 1 (terminal value)
-        assert call_count["count"] >= 128, \
-            f"predict_values should be called at least 128 times, got {call_count['count']}"
+        assert (
+            call_count["count"] >= 128
+        ), f"predict_values should be called at least 128 times, got {call_count['count']}"
         print(f"✓ collect_rollouts called predict_values {call_count['count']} times")
 
     def test_vf_clipping_buffer_contains_first_critic_quantiles(self, twin_critics_model):
         """Test that VF clipping buffer still contains quantiles from first critic."""
         model = twin_critics_model
 
-        # Initialize environment (required for collect_rollouts)
-        model._last_obs = model.env.reset()
-        model._last_episode_starts = np.ones((model.env.num_envs,), dtype=bool)
-
         # Collect rollouts
         model.collect_rollouts(
             model.env,
-            model._init_callback,
+            _rollout_callback(model),
             model.rollout_buffer,
             n_rollout_steps=model.n_steps,
         )
 
         # Check that rollout buffer has value_quantiles
-        assert model.rollout_buffer.value_quantiles is not None, \
-            "Rollout buffer should contain value_quantiles for VF clipping"
+        assert (
+            model.rollout_buffer.value_quantiles is not None
+        ), "Rollout buffer should contain value_quantiles for VF clipping"
 
         # Verify shape: [buffer_size, n_envs, n_quantiles]
         expected_shape = (model.n_steps, model.env.num_envs, 21)
-        assert model.rollout_buffer.value_quantiles.shape == expected_shape, \
-            f"Expected shape {expected_shape}, got {model.rollout_buffer.value_quantiles.shape}"
+        assert (
+            model.rollout_buffer.value_quantiles.shape == expected_shape
+        ), f"Expected shape {expected_shape}, got {model.rollout_buffer.value_quantiles.shape}"
 
         print(f"✓ VF clipping buffer contains quantiles with shape {expected_shape}")
 
@@ -218,10 +237,6 @@ class TestTwinCriticsGAEFix:
         model = twin_critics_model
         policy = model.policy
 
-        # Initialize environment (required for collect_rollouts)
-        model._last_obs = model.env.reset()
-        model._last_episode_starts = np.ones((model.env.num_envs,), dtype=bool)
-
         # Track the values used for GAE computation
         gae_values = []
 
@@ -233,11 +248,11 @@ class TestTwinCriticsGAEFix:
             gae_values.append(result.detach().cpu().numpy().copy())
             return result
 
-        with patch.object(policy, 'predict_values', side_effect=capture_predict_values):
+        with patch.object(policy, "predict_values", side_effect=capture_predict_values):
             # Collect rollouts
             model.collect_rollouts(
                 model.env,
-                model._init_callback,
+                _rollout_callback(model),
                 model.rollout_buffer,
                 n_rollout_steps=model.n_steps,
             )
@@ -257,39 +272,38 @@ class TestTwinCriticsGAEFix:
         """Test that terminal bootstrap value uses predict_values (min for Twin Critics)."""
         model = twin_critics_model
 
-        # Initialize environment (required for collect_rollouts)
-        model._last_obs = model.env.reset()
-        model._last_episode_starts = np.ones((model.env.num_envs,), dtype=bool)
-
         # Track calls to predict_values
         predict_values_calls = []
         original_predict_values = model.policy.predict_values
 
         def track_predict_values(*args, **kwargs):
             result = original_predict_values(*args, **kwargs)
-            predict_values_calls.append({
-                'args': args,
-                'kwargs': kwargs,
-                'result': result.detach().cpu().numpy().copy()
-            })
+            predict_values_calls.append(
+                {"args": args, "kwargs": kwargs, "result": result.detach().cpu().numpy().copy()}
+            )
             return result
 
-        with patch.object(model.policy, 'predict_values', side_effect=track_predict_values):
+        with patch.object(model.policy, "predict_values", side_effect=track_predict_values):
             # Collect rollouts (this includes terminal bootstrap)
             model.collect_rollouts(
                 model.env,
-                model._init_callback,
+                _rollout_callback(model),
                 model.rollout_buffer,
                 n_rollout_steps=model.n_steps,
             )
 
         # The last call should be for terminal bootstrap (after the rollout loop)
-        assert len(predict_values_calls) >= model.n_steps + 1, \
-            f"Expected at least {model.n_steps + 1} calls (steps + terminal), got {len(predict_values_calls)}"
+        assert (
+            len(predict_values_calls) >= model.n_steps + 1
+        ), f"Expected at least {model.n_steps + 1} calls (steps + terminal), got {len(predict_values_calls)}"
 
-        print(f"✓ Terminal bootstrap correctly uses predict_values (call {len(predict_values_calls)})")
+        print(
+            f"✓ Terminal bootstrap correctly uses predict_values (call {len(predict_values_calls)})"
+        )
 
-    def test_twin_critics_reduce_value_overestimation(self, twin_critics_model, single_critic_model):
+    def test_twin_critics_reduce_value_overestimation(
+        self, twin_critics_model, single_critic_model
+    ):
         """Test that Twin Critics actually reduce value overestimation compared to single critic.
 
         This is a sanity check that the min operation has the intended effect.
@@ -316,8 +330,7 @@ class TestTwinCriticsGAEFix:
                 obs, twin_critics_model.policy.vf_features_extractor
             )
             latent_vf, _ = twin_critics_model.policy._process_sequence(
-                features, lstm_states_twin.vf, episode_starts,
-                twin_critics_model.policy.lstm_critic
+                features, lstm_states_twin.vf, episode_starts, twin_critics_model.policy.lstm_critic
             )
             latent_vf = twin_critics_model.policy.mlp_extractor.forward_critic(latent_vf)
 
@@ -329,8 +342,9 @@ class TestTwinCriticsGAEFix:
             max_value = torch.max(value_1, value_2)
 
         # Twin Critics should return min, which should be <= max
-        assert torch.all(twin_values <= max_value + 1e-5), \
-            "Twin Critics values should be <= max of individual critics"
+        assert torch.all(
+            twin_values <= max_value + 1e-5
+        ), "Twin Critics values should be <= max of individual critics"
 
         # Verify that min is actually less than at least one critic for most samples
         # (otherwise the two critics are identical and Twin Critics has no effect)
@@ -353,12 +367,15 @@ class TestTwinCriticsGAEIntegration:
         model.learn(total_timesteps=512, progress_bar=False, log_interval=None)
 
         # Verify that training completed without errors
-        assert model.num_timesteps >= 512, \
-            f"Expected at least 512 timesteps, got {model.num_timesteps}"
+        assert (
+            model.num_timesteps >= 512
+        ), f"Expected at least 512 timesteps, got {model.num_timesteps}"
 
         # Verify that rollout buffer was used
-        assert model.rollout_buffer.pos == 0, \
-            "Rollout buffer should be reset after training"
+        # collect_rollouts resets the buffer at the START of each collection, so
+        # after learn() returns it holds the last rollout rather than being empty.
+        assert model.rollout_buffer.pos == model.n_steps
+        assert model.rollout_buffer.full
 
         print("✓ Full training loop completed successfully with Twin Critics")
 
@@ -366,34 +383,32 @@ class TestTwinCriticsGAEIntegration:
         """Test that computed advantages are finite and within reasonable bounds."""
         model = twin_critics_model
 
-        # Initialize environment (required for collect_rollouts)
-        model._last_obs = model.env.reset()
-        model._last_episode_starts = np.ones((model.env.num_envs,), dtype=bool)
-
         # Collect rollouts
         model.collect_rollouts(
             model.env,
-            model._init_callback,
+            _rollout_callback(model),
             model.rollout_buffer,
             n_rollout_steps=model.n_steps,
         )
 
-        # Compute returns and advantages
+        # Compute returns and advantages. last_values must be a tensor: sb3
+        # clones it, and the buffer stores plain numpy arrays.
+        last_values = torch.as_tensor(
+            model.rollout_buffer.values[-1], dtype=torch.float32, device=model.device
+        )
         model.rollout_buffer.compute_returns_and_advantage(
-            last_values=model.rollout_buffer.values[-1],
+            last_values=last_values,
             dones=np.zeros(model.env.num_envs),
         )
 
         advantages = model.rollout_buffer.advantages.copy()
 
         # Verify advantages are finite
-        assert np.all(np.isfinite(advantages)), \
-            "Advantages should all be finite"
+        assert np.all(np.isfinite(advantages)), "Advantages should all be finite"
 
         # Verify advantages have reasonable magnitude (sanity check)
         mean_abs_adv = np.abs(advantages).mean()
-        assert mean_abs_adv < 1000, \
-            f"Advantages seem too large: mean abs = {mean_abs_adv}"
+        assert mean_abs_adv < 1000, f"Advantages seem too large: mean abs = {mean_abs_adv}"
 
         print(f"✓ Advantages are finite with mean abs = {mean_abs_adv:.4f}")
 

@@ -62,6 +62,7 @@ SAFE_ID_CHARS: Final[str] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY
 
 class IsolationViolationType(Enum):
     """Types of isolation violations."""
+
     PATH_TRAVERSAL = auto()
     CROSS_TENANT_ACCESS = auto()
     UNAUTHORIZED_RESOURCE = auto()
@@ -98,6 +99,7 @@ class IsolatedJobContext:
 
     Contains all necessary isolation parameters and verified credentials.
     """
+
     # Identity
     tenant_id: str
     job_id: str
@@ -177,6 +179,7 @@ class TenantNamespace:
 
     Contains all tenant-specific resources and isolation boundaries.
     """
+
     tenant_id: str
 
     # Paths
@@ -217,6 +220,7 @@ class TenantNamespace:
 @dataclass
 class ViolationRecord:
     """Record of an isolation violation."""
+
     violation_id: str = field(default_factory=lambda: str(uuid4()))
     violation_type: IsolationViolationType = IsolationViolationType.PATH_TRAVERSAL
     tenant_id: str = ""
@@ -611,13 +615,25 @@ class TenantJobIsolation:
                 )
                 return False
 
+            # Compare resolved against resolved. path.resolve() expands 8.3
+            # short names and the drive on Windows, so measuring it against an
+            # unresolved data_path never matched there and a write to the
+            # read-only data path came back allowed.
+            def _resolved(candidate: Path) -> Path:
+                try:
+                    return candidate.resolve()
+                except (OSError, RuntimeError):
+                    return candidate
+
+            data_root = _resolved(context.data_path)
+
             # Check against allowed paths
             for allowed in context.allowed_paths:
                 try:
-                    resolved.relative_to(allowed)
+                    resolved.relative_to(_resolved(allowed))
 
                     # For data_path, only allow read
-                    if write and resolved.is_relative_to(context.data_path):
+                    if write and resolved.is_relative_to(data_root):
                         self._record_violation(
                             IsolationViolationType.PERMISSION_DENIED,
                             context.tenant_id,
@@ -818,7 +834,7 @@ class TenantJobIsolation:
 
         self._violations.append(record)
         if len(self._violations) > self._max_violations:
-            self._violations = self._violations[-self._max_violations:]
+            self._violations = self._violations[-self._max_violations :]
 
         self._stats["violations_blocked"] += 1
 

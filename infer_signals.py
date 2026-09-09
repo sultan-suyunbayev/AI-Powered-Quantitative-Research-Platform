@@ -11,7 +11,9 @@ Outputs per-symbol CSVs under data/signals/{SYMBOL}.csv:
 Usage:
   python infer_signals.py
 """
-import os, glob, json
+import os
+import glob
+import json
 import pickle
 from pathlib import Path
 import pandas as pd
@@ -25,6 +27,15 @@ PREPROC = Path("models/preproc_pipeline.json")
 MODELS_DIR = Path("models")
 OUT_DIR = Path("data/signals")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+class ModelLoadError(RuntimeError):
+    """A deliberate refusal to use a model file.
+
+    Distinct from "this file is not something torch can read", which is the
+    signal to fall through and try the sklearn loader.
+    """
+
 
 def _load_model():
     """Load a trained model from models/ directory.
@@ -42,6 +53,7 @@ def _load_model():
     if pt_candidates:
         try:
             import torch
+
             path = pt_candidates[0]
 
             # Security: Load with weights_only=True to prevent arbitrary code execution
@@ -49,18 +61,23 @@ def _load_model():
                 model = torch.load(path, map_location="cpu", weights_only=True)
             except (pickle.UnpicklingError, RuntimeError, AttributeError) as e:
                 # FAIL-CLOSED: Do not load unsafe models by default
-                allow_unsafe = os.environ.get("ALLOW_UNSAFE_MODEL_LOAD", "").lower() in ("1", "true", "yes")
+                allow_unsafe = os.environ.get("ALLOW_UNSAFE_MODEL_LOAD", "").lower() in (
+                    "1",
+                    "true",
+                    "yes",
+                )
                 if allow_unsafe:
                     import warnings
+
                     warnings.warn(
                         f"SECURITY WARNING: Loading model {path} with weights_only=False "
                         f"(ALLOW_UNSAFE_MODEL_LOAD is set). This allows arbitrary code execution. "
                         f"Convert to secure format: python tools/convert_legacy_models.py",
-                        SecurityWarning
+                        UserWarning,
                     )
                     model = torch.load(path, map_location="cpu", weights_only=False)
                 else:
-                    raise RuntimeError(
+                    raise ModelLoadError(
                         f"SECURITY: Model {path} contains non-tensor data and cannot be loaded securely. "
                         f"This is blocked by default to prevent arbitrary code execution. "
                         f"Options: (1) Convert model: python tools/convert_legacy_models.py, "
@@ -68,8 +85,24 @@ def _load_model():
                         f"Original error: {e}"
                     ) from e
 
+            if not hasattr(model, "eval"):
+                # weights_only=True gives back the tensors, not a Module, and
+                # _predict calls the model. There is no architecture here to load
+                # the weights into, so say that rather than reporting no model.
+                raise ModelLoadError(
+                    f"Model {path} holds a state_dict, not a serialised model, and there is "
+                    f"no architecture here to load it into. Save the model itself "
+                    f"(torch.save(model, path)) or run: python tools/convert_legacy_models.py"
+                )
+
             model.eval()
             return ("torch", model, path)
+        except ModelLoadError:
+            # A refusal is the answer, not a reason to try the next loader. This
+            # handler used to swallow it, so a model rejected by the fail-closed
+            # policy surfaced as FileNotFoundError("No supported model found") and
+            # the operator never saw why, or how to convert it.
+            raise
         except Exception:
             pass
     # Try sklearn/joblib
@@ -77,6 +110,7 @@ def _load_model():
     if pkl_candidates:
         try:
             import joblib
+
             path = pkl_candidates[0]
             model = joblib.load(path)
             return ("sk", model, path)
@@ -84,17 +118,20 @@ def _load_model():
             pass
     raise FileNotFoundError("No supported model found in models/ (.pt/.pth or .pkl/.joblib).")
 
+
 def _feature_cols(df: pd.DataFrame) -> list:
     # Use standardized features first if present; otherwise originals (except keys)
     prefer_z = [c for c in df.columns if c.endswith("_z")]
     if prefer_z:
         return prefer_z
-    exclude = {"timestamp","symbol"}
+    exclude = {"timestamp", "symbol"}
     return [c for c in df.columns if c not in exclude and pd.api.types.is_number_dtype(df[c])]
+
 
 def _predict(model_kind, model, X):
     if model_kind == "torch":
         import torch
+
         with torch.no_grad():
             x = torch.tensor(X, dtype=torch.float32)
             y = model(x)
@@ -118,6 +155,7 @@ def _predict(model_kind, model, X):
         y = model.predict(X)
         return np.asarray(y).ravel()
 
+
 def main():
     if not PREPROC.exists():
         raise FileNotFoundError(f"Missing feature pipeline at {PREPROC}. Train first.")
@@ -136,12 +174,14 @@ def main():
         feat_cols = _feature_cols(df)
         X = df[feat_cols].astype(float).to_numpy()
         score = _predict(model_kind, model, X)
-        out = pd.DataFrame({
-            "timestamp": df["timestamp"].astype("int64"),
-            "symbol": df["symbol"].astype(str),
-            "close": df["close"].astype(float),
-            "score": score.astype(float)
-        })
+        out = pd.DataFrame(
+            {
+                "timestamp": df["timestamp"].astype("int64"),
+                "symbol": df["symbol"].astype(str),
+                "close": df["close"].astype(float),
+                "score": score.astype(float),
+            }
+        )
         out = out.dropna().sort_values("timestamp")
         # thresholds from ENV/config (defaults are conservative)
         BUY_THR = get_float("SIGNAL_BUY_THR", 0.6)
@@ -162,7 +202,7 @@ def main():
 
         # reorder columns for downstream consumers
         # (price == close; keep score for debugging/analysis)
-        out = out[["timestamp","symbol","signal","close","score"]]
+        out = out[["timestamp", "symbol", "signal", "close", "score"]]
         out_path = OUT_DIR / f"{sym}.csv"
         # atomic write
         tmp = out_path.with_suffix(out_path.suffix + ".tmp")
@@ -171,9 +211,12 @@ def main():
 
         # explicit log on the last closed hour
         _last = out.iloc[-1]
-        print(f"{sym}: last_closed={pd.to_datetime(int(_last['timestamp']), unit='s', utc=True)} "
-              f"score={float(_last['score']):.4f} -> signal={_last['signal']} price={float(_last['close']):.6f}")
+        print(
+            f"{sym}: last_closed={pd.to_datetime(int(_last['timestamp']), unit='s', utc=True)} "
+            f"score={float(_last['score']):.4f} -> signal={_last['signal']} price={float(_last['close']):.6f}"
+        )
         print(f"✓ Wrote signals: {out_path} ({len(out)} rows)")
+
 
 if __name__ == "__main__":
     main()

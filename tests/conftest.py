@@ -23,10 +23,12 @@ This is NOT tech debt - it's a feature enabling flexible test execution.
 Tech Debt Tracking: docs/reports/TECH_DEBT_REGISTRY.md#testing-optional-deps-pattern (Closed)
 Related: docs/testing/TESTING_POLICY.md
 """
+
 from __future__ import annotations
 
 import sys
 import types
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -42,6 +44,7 @@ import logging  # noqa: F401
 # =============================================================================
 # Optional dependency detection
 # =============================================================================
+
 
 def _check_import(module_name: str) -> bool:
     """Check if a module can be imported."""
@@ -67,6 +70,7 @@ OPTUNA_AVAILABLE = _check_import("optuna")
 # Pytest hooks for automatic test skipping
 # =============================================================================
 
+
 def pytest_collection_modifyitems(config, items):
     """
     Automatically skip tests that require unavailable optional dependencies.
@@ -75,42 +79,84 @@ def pytest_collection_modifyitems(config, items):
     which tests should be skipped based on missing dependencies.
     """
     skip_torch = pytest.mark.skip(reason="PyTorch not installed (install with: pip install torch)")
-    skip_gymnasium = pytest.mark.skip(reason="gymnasium not installed (install with: pip install gymnasium)")
-    skip_sb3 = pytest.mark.skip(reason="stable-baselines3 not installed (install with: pip install stable-baselines3)")
-    skip_pyarrow = pytest.mark.skip(reason="pyarrow not installed (install with: pip install pyarrow)")
-    skip_sortedcontainers = pytest.mark.skip(reason="sortedcontainers not installed (install with: pip install sortedcontainers)")
-    skip_cloudpickle = pytest.mark.skip(reason="cloudpickle not installed (install with: pip install cloudpickle)")
+    skip_gymnasium = pytest.mark.skip(
+        reason="gymnasium not installed (install with: pip install gymnasium)"
+    )
+    skip_sb3 = pytest.mark.skip(
+        reason="stable-baselines3 not installed (install with: pip install stable-baselines3)"
+    )
+    skip_pyarrow = pytest.mark.skip(
+        reason="pyarrow not installed (install with: pip install pyarrow)"
+    )
+    skip_sortedcontainers = pytest.mark.skip(
+        reason="sortedcontainers not installed (install with: pip install sortedcontainers)"
+    )
+    skip_cloudpickle = pytest.mark.skip(
+        reason="cloudpickle not installed (install with: pip install cloudpickle)"
+    )
     skip_optuna = pytest.mark.skip(reason="optuna not installed (install with: pip install optuna)")
-    skip_hypothesis = pytest.mark.skip(reason="hypothesis not installed (install with: pip install hypothesis)")
+    skip_hypothesis = pytest.mark.skip(
+        reason="hypothesis not installed (install with: pip install hypothesis)"
+    )
 
     # Patterns indicating torch dependency
     torch_patterns = [
-        "test_ppo", "test_twin_critics", "test_categorical", "test_vgs",
-        "test_upgd", "test_gradient", "test_quantile", "test_popart",
-        "test_lstm", "test_pbt", "test_distributional", "test_numerical",
-        "test_shared_memory", "test_vf_clip", "test_vf_variance",
-        "test_gae", "test_kl_direction", "test_return_scale",
-        "test_state_perturbation", "test_torch", "test_ev_",
-        "test_bug_fixes_2025", "test_bug8", "test_bug10",
-        "test_advantage_normalization", "test_adaptive_upgd",
-        "test_actual_ppo", "test_four_problems", "test_potential_issues",
-        "test_unit_custom_policy", "test_unit_train_model",
+        "test_ppo",
+        "test_twin_critics",
+        "test_categorical",
+        "test_vgs",
+        "test_upgd",
+        "test_gradient",
+        "test_quantile",
+        "test_popart",
+        "test_lstm",
+        "test_pbt",
+        "test_distributional",
+        "test_numerical",
+        "test_shared_memory",
+        "test_vf_clip",
+        "test_vf_variance",
+        "test_gae",
+        "test_kl_direction",
+        "test_return_scale",
+        "test_state_perturbation",
+        "test_torch",
+        "test_ev_",
+        "test_bug_fixes_2025",
+        "test_bug8",
+        "test_bug10",
+        "test_advantage_normalization",
+        "test_adaptive_upgd",
+        "test_actual_ppo",
+        "test_four_problems",
+        "test_potential_issues",
+        "test_unit_custom_policy",
+        "test_unit_train_model",
     ]
 
     # Patterns indicating gymnasium dependency
     gymnasium_patterns = [
-        "test_bug7_grouped_ev", "test_bug_fixes_final_audit",
-        "test_correct_api_usage", "test_forex_improvements",
-        "test_forex_training", "test_futures_training",
+        "test_bug7_grouped_ev",
+        "test_bug_fixes_final_audit",
+        "test_correct_api_usage",
+        "test_forex_improvements",
+        "test_forex_training",
+        "test_futures_training",
         "test_timing_profiles",
     ]
 
     # Patterns indicating LOB/sortedcontainers dependency
     lob_patterns = [
-        "test_lob", "test_l3", "test_matching_engine",
-        "test_hidden_liquidity", "test_queue_tracker",
-        "test_cme_l3", "test_cme_risk", "test_cme_settlement",
-        "test_execution_providers_l3", "test_market_impact",
+        "test_lob",
+        "test_l3",
+        "test_matching_engine",
+        "test_hidden_liquidity",
+        "test_queue_tracker",
+        "test_cme_l3",
+        "test_cme_risk",
+        "test_cme_settlement",
+        "test_execution_providers_l3",
+        "test_market_impact",
         "test_fill_probability",
     ]
 
@@ -172,23 +218,16 @@ def pytest_collection_modifyitems(config, items):
 
 def pytest_configure(config):
     """Register custom markers."""
-    config.addinivalue_line(
-        "markers", "requires_torch: mark test as requiring PyTorch"
-    )
-    config.addinivalue_line(
-        "markers", "requires_gymnasium: mark test as requiring gymnasium"
-    )
-    config.addinivalue_line(
-        "markers", "requires_sb3: mark test as requiring stable-baselines3"
-    )
-    config.addinivalue_line(
-        "markers", "requires_pyarrow: mark test as requiring pyarrow"
-    )
+    config.addinivalue_line("markers", "requires_torch: mark test as requiring PyTorch")
+    config.addinivalue_line("markers", "requires_gymnasium: mark test as requiring gymnasium")
+    config.addinivalue_line("markers", "requires_sb3: mark test as requiring stable-baselines3")
+    config.addinivalue_line("markers", "requires_pyarrow: mark test as requiring pyarrow")
 
 
 # =============================================================================
 # Fixtures for optional dependencies
 # =============================================================================
+
 
 @pytest.fixture
 def requires_torch():
@@ -216,6 +255,7 @@ def requires_pyarrow():
     """Skip test if pyarrow is not available."""
     if not PYARROW_AVAILABLE:
         pytest.skip("pyarrow not installed")
+
 
 _requests_stub = types.ModuleType("requests")
 
@@ -249,32 +289,100 @@ class _MockSession:
 
 _requests_stub.Session = _MockSession
 
+
+class _PreparedRequest:
+    """The part of requests.PreparedRequest that assembles a URL.
+
+    ``rest_budget._make_cache_key`` uses it to canonicalise a request into a
+    cache key; nothing here performs I/O, so the network guard has no reason to
+    take it away.
+    """
+
+    def __init__(self, method: str, url: str, params=None):
+        self.method = (method or "GET").upper()
+        parts = urllib.parse.urlsplit(url or "")
+        query = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        if params:
+            items = params.items() if hasattr(params, "items") else params
+            for key, value in items:
+                if value is None:
+                    continue
+                if isinstance(value, (list, tuple, set)):
+                    query.extend((str(key), str(item)) for item in value)
+                else:
+                    query.append((str(key), str(value)))
+        self.url = urllib.parse.urlunsplit(
+            (
+                parts.scheme,
+                parts.netloc,
+                parts.path,
+                urllib.parse.urlencode(query, doseq=True),
+                parts.fragment,
+            )
+        )
+        self.headers: dict = {}
+        self.body = None
+
+
+class _Request:
+    """Enough of requests.Request to prepare a URL."""
+
+    def __init__(self, method: str = "GET", url: str = "", params=None, **kwargs):
+        self.method = method
+        self.url = url
+        self.params = params
+        self.kwargs = kwargs
+
+    def prepare(self) -> _PreparedRequest:
+        return _PreparedRequest(self.method, self.url, self.params)
+
+
+class _Response:
+    """Placeholder for annotations; the guard never produces one."""
+
+    status_code = 0
+    headers: dict = {}
+    url = ""
+
+    def json(self):  # pragma: no cover - nothing in the tests calls it
+        raise RuntimeError("requests.Response is not available in the test environment")
+
+
+_requests_stub.Request = _Request
+_requests_stub.PreparedRequest = _PreparedRequest
+_requests_stub.Response = _Response
+
 # Create stub exceptions module for testing
 _requests_exceptions_stub = types.ModuleType("requests.exceptions")
 
 
 class RequestException(Exception):
     """Base exception for requests."""
+
     pass
 
 
 class HTTPError(RequestException):
     """HTTP error occurred."""
+
     pass
 
 
 class ConnectionError(RequestException):
     """Connection error occurred."""
+
     pass
 
 
 class Timeout(RequestException):
     """Request timed out."""
+
     pass
 
 
 class TooManyRedirects(RequestException):
     """Too many redirects."""
+
     pass
 
 
@@ -302,18 +410,112 @@ if sys.platform == "win32":
     _resource_stub.RLIMIT_NOFILE = 7
     _resource_stub.RLIMIT_NPROC = 8
     _resource_stub.RLIMIT_CORE = 4
-    
+
     class ResourceError(Exception):
         pass
+
     _resource_stub.error = ResourceError
-    
+
     def _setrlimit(limit, limits):
         pass
+
     _resource_stub.setrlimit = _setrlimit
-    
+
     sys.modules["resource"] = _resource_stub
 
 # Re-add tests directory to sys.path to resolve sibling imports in test modules
 if str(TESTS) not in sys.path:
     sys.path.append(str(TESTS))
 
+
+# ---------------------------------------------------------------------------
+# Feature-layout guard
+# ---------------------------------------------------------------------------
+# feature_config.make_layout() rewrites the module-level FEATURES_LAYOUT and
+# N_FEATURES in place.  Several tests call it with a narrower layout
+# (ext_norm_dim=21, ext_norm_dim=28, max_num_tokens=16) and never put the
+# default back, so every later test in the same worker sizes its buffers from
+# the wrong total.
+#
+# That is not a cosmetic mismatch: obs_builder.build_observation_vector writes
+# through typed memoryviews with bounds checking off, so an out_features array
+# shorter than the vector it writes runs past the end of the allocation and
+# corrupts the heap.  Under pytest-xdist the worker dies with
+# "double free or corruption" / "Fatal Python error: Aborted", which can in
+# turn take the whole run down with an xdist INTERNALERROR.
+#
+# Snapshot the layout once and restore it after every test.
+try:
+    import feature_config as _feature_config
+
+    _DEFAULT_FEATURES_LAYOUT = [dict(block) for block in _feature_config.FEATURES_LAYOUT]
+    _DEFAULT_N_FEATURES = _feature_config.N_FEATURES
+    _DEFAULT_EXT_NORM_DIM = _feature_config.EXT_NORM_DIM
+except Exception:  # pragma: no cover - feature_config is always importable in-tree
+    _feature_config = None
+
+
+# ---------------------------------------------------------------------------
+# Deterministic randomness
+# ---------------------------------------------------------------------------
+# Unseeded draws made the suite fail differently on every run: three CI runs in
+# a row failed on three different tests, each asserting something about a random
+# value that the distribution crosses some fraction of the time. Seeding before
+# every test makes a pass mean the code passed, not that the draw was kind.
+#
+# Only generators that are already imported are seeded -- a test that never
+# touches torch should not pay to import it. A test that wants its own seed sets
+# it inside the test body and wins, because this runs first.
+
+_TEST_SEED = 20260908
+
+
+@pytest.fixture(autouse=True)
+def _deterministic_randomness():
+    """Put every imported random generator in a known state before each test."""
+    import random as _random
+
+    _random.seed(_TEST_SEED)
+
+    _numpy = sys.modules.get("numpy")
+    if _numpy is not None:
+        try:
+            _numpy.random.seed(_TEST_SEED)
+        except Exception:  # pragma: no cover - a stubbed numpy, seen in this suite
+            pass
+
+    _torch = sys.modules.get("torch")
+    if _torch is not None:
+        try:
+            _torch.manual_seed(_TEST_SEED)
+        except Exception:  # pragma: no cover - a stubbed torch, seen in this suite
+            pass
+
+    yield
+
+
+def _reset_feature_layout() -> None:
+    if _feature_config is None:
+        return
+    if (
+        _feature_config.N_FEATURES != _DEFAULT_N_FEATURES
+        or _feature_config.EXT_NORM_DIM != _DEFAULT_EXT_NORM_DIM
+        or _feature_config.FEATURES_LAYOUT != _DEFAULT_FEATURES_LAYOUT
+    ):
+        _feature_config.FEATURES_LAYOUT = [dict(block) for block in _DEFAULT_FEATURES_LAYOUT]
+        _feature_config.N_FEATURES = _DEFAULT_N_FEATURES
+        _feature_config.EXT_NORM_DIM = _DEFAULT_EXT_NORM_DIM
+
+
+@pytest.fixture(autouse=True)
+def _restore_feature_layout():
+    """Put feature_config's global layout back around every test.
+
+    Before as well as after: a module-level ``make_layout()`` call runs during
+    *collection*, which is over before the first test starts, so restoring only
+    on teardown would leave the whole session working from whatever the last
+    collected module left behind.
+    """
+    _reset_feature_layout()
+    yield
+    _reset_feature_layout()

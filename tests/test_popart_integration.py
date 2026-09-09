@@ -6,6 +6,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 import pytest
+
 torch = pytest.importorskip("torch")
 
 import pytest
@@ -16,7 +17,9 @@ if "stable_baselines3.common.save_util" not in sys.modules:
     # Ensure parent modules exist first
     sb3 = sys.modules.setdefault("stable_baselines3", types.ModuleType("stable_baselines3"))
     sb3.__path__ = []  # type: ignore[attr-defined]
-    common = sys.modules.setdefault("stable_baselines3.common", types.ModuleType("stable_baselines3.common"))
+    common = sys.modules.setdefault(
+        "stable_baselines3.common", types.ModuleType("stable_baselines3.common")
+    )
     common.__path__ = []  # type: ignore[attr-defined]
     sb3.common = common  # type: ignore[attr-defined]
 
@@ -69,6 +72,7 @@ if "stable_baselines3.common.save_util" not in sys.modules:
     class _RunningMeanStd:  # pragma: no cover - stub for import
         def __init__(self, shape=()):
             import numpy as np
+
             self.mean = np.zeros(shape, dtype=float)
             self.var = np.ones(shape, dtype=float)
             self.count = 0.0
@@ -90,6 +94,7 @@ if "stable_baselines3.common.save_util" not in sys.modules:
 import test_distributional_ppo_raw_outliers  # noqa: F401  # ensure RL stubs are registered
 
 import distributional_ppo as distributional_ppo_module
+
 if "stable_baselines3.common.vec_env.base_vec_env" not in sys.modules:
     base_vec_env = types.ModuleType("stable_baselines3.common.vec_env.base_vec_env")
 
@@ -102,6 +107,7 @@ if "stable_baselines3.common.vec_env.base_vec_env" not in sys.modules:
 
     base_vec_env.VecEnv = _VecEnvStub
     base_vec_env.CloudpickleWrapper = _CloudpickleWrapperStub
+
     class _VecEnvWrapperStub(_VecEnvStub):  # pragma: no cover - placeholder wrapper
         def __init__(self, env: object) -> None:
             self.env = env
@@ -128,12 +134,14 @@ if "gymnasium.spaces.utils" not in sys.modules:
 
 gymnasium_module = sys.modules.get("gymnasium")
 if gymnasium_module is not None and not hasattr(gymnasium_module, "Env"):
+
     class _EnvBase:  # pragma: no cover - placeholder base env
         pass
 
     gymnasium_module.Env = _EnvBase
     spaces_module = getattr(gymnasium_module, "spaces", None)
     if spaces_module is not None and not hasattr(spaces_module, "Space"):
+
         class _SpaceBase:  # pragma: no cover - placeholder space
             pass
 
@@ -141,6 +149,7 @@ if gymnasium_module is not None and not hasattr(gymnasium_module, "Env"):
 
 # Ensure gymnasium.Wrapper exists (for wrappers.forex_env imports)
 if gymnasium_module is not None and not hasattr(gymnasium_module, "Wrapper"):
+
     class _WrapperBase:  # pragma: no cover - placeholder wrapper
         def __init__(self, env):
             self.env = env
@@ -177,21 +186,25 @@ if vec_env_module is None:
     vec_env_module = types.ModuleType("stable_baselines3.common.vec_env")
     sys.modules["stable_baselines3.common.vec_env"] = vec_env_module
 if not hasattr(vec_env_module, "VecEnv"):
+
     class _VecEnvBase:  # pragma: no cover - placeholder vec env
         pass
 
     vec_env_module.VecEnv = _VecEnvBase
 if not hasattr(vec_env_module, "DummyVecEnv"):
+
     class _DummyVecEnvStub(vec_env_module.VecEnv):  # type: ignore[attr-defined]
         pass
 
     vec_env_module.DummyVecEnv = _DummyVecEnvStub
 if not hasattr(vec_env_module, "SubprocVecEnv"):
+
     class _SubprocVecEnvStub(vec_env_module.VecEnv):  # type: ignore[attr-defined]
         pass
 
     vec_env_module.SubprocVecEnv = _SubprocVecEnvStub
 if not hasattr(vec_env_module, "VecMonitor"):
+
     class _VecMonitorStub(vec_env_module.VecEnv):  # type: ignore[attr-defined]
         def __init__(self, env):
             self.env = env
@@ -242,11 +255,15 @@ class _CaptureLogger:
     def __init__(self) -> None:
         self.records: dict[str, float] = {}
 
-    def record(self, key: str, value, **_: object) -> None:  # pragma: no cover - float cast in tests
+    def record(
+        self, key: str, value, **_: object
+    ) -> None:  # pragma: no cover - float cast in tests
         self.records[key] = value
 
 
-def test_popart_holdout_loader_returns_none_even_when_enabled(caplog: pytest.LogCaptureFixture) -> None:
+def test_popart_holdout_loader_returns_none_even_when_enabled(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     caplog.set_level("WARNING")
     cfg = {"enabled": True, "replay_path": "artifacts/popart_holdout.npz"}
 
@@ -264,7 +281,9 @@ def test_ensure_model_popart_holdout_loader_is_noop(caplog: pytest.LogCaptureFix
             self.calls: list[Any] = []
             self.logger = types.SimpleNamespace()
 
-        def _initialise_popart_controller(self, cfg: Any) -> None:  # pragma: no cover - should not run
+        def _initialise_popart_controller(
+            self, cfg: Any
+        ) -> None:  # pragma: no cover - should not run
             self.calls.append(cfg)
 
     algo = _AlgoStub()
@@ -277,7 +296,9 @@ def test_ensure_model_popart_holdout_loader_is_noop(caplog: pytest.LogCaptureFix
     assert any("PopArt controller configuration" in rec.message for rec in caplog.records)
 
 
-def test_distributionalppo_initialises_with_popart_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_distributionalppo_initialises_with_popart_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _PolicyStub:
         uses_quantile_value_head = False
         quantile_huber_kappa = 1.0
@@ -290,7 +311,8 @@ def test_distributionalppo_initialises_with_popart_disabled(monkeypatch: pytest.
 
     def _fake_super_init(self, *args: Any, **kwargs: Any) -> None:
         logger = getattr(self, "logger", _CaptureLogger())
-        self.logger = logger
+        # logger is a read-only property on BaseAlgorithm; the backing attribute
+        # is _logger, which is what set_logger writes.
         self._logger = logger
         self.policy = _PolicyStub()
         self.device = torch.device("cpu")
@@ -331,7 +353,7 @@ def test_distributionalppo_initialises_with_popart_disabled(monkeypatch: pytest.
     monkeypatch.setattr(DistributionalPPO, "_setup_model", _fake_setup_model)
 
     algo = DistributionalPPO.__new__(DistributionalPPO)
-    algo.logger = _CaptureLogger()
+    algo.set_logger(_CaptureLogger())  # logger is a read-only property on BaseAlgorithm
     algo._logger = algo.logger
 
     cfg = {
@@ -376,9 +398,13 @@ def test_popart_save_load_retains_disabled_state(
 
     def _fake_super_init(self, *args: Any, **kwargs: Any) -> None:
         logger = getattr(self, "logger", _CaptureLogger())
-        self.logger = logger
+        # logger is a read-only property on BaseAlgorithm; the backing attribute
+        # is _logger, which is what set_logger writes.
         self._logger = logger
-        self.policy = _PolicyStub()
+        # The load path reconstructs the model with policy=<class>; instantiate it
+        # so self.policy is an object and its methods are bound.
+        policy_arg = kwargs.get("policy", args[0] if args else None)
+        self.policy = policy_arg() if isinstance(policy_arg, type) else _PolicyStub()
         self.policy_class = _PolicyStub
         self.device = torch.device("cpu")
         self.observation_space = types.SimpleNamespace()
@@ -481,8 +507,12 @@ def test_popart_save_load_retains_disabled_state(
             custom_objects=custom_objects,
             print_system_info=print_system_info,
         )
+        # sb3 builds the policy from the saved class; DistributionalPPO's
+        # lightweight env=None path assigns whatever it is given straight to
+        # self.policy, so hand it an instance and keep the methods bound.
+        policy_cls = data.get("policy_class")
         model = cls(
-            policy=data.get("policy_class"),
+            policy=policy_cls() if isinstance(policy_cls, type) else policy_cls,
             env=env,
             device=device,
             _init_setup_model=False,
@@ -514,7 +544,7 @@ def test_popart_save_load_retains_disabled_state(
 
     algo = DistributionalPPO.__new__(DistributionalPPO)
     logger = _CaptureLogger()
-    algo.logger = logger
+    algo.set_logger(logger)  # logger is a read-only property on BaseAlgorithm
     algo._logger = logger
 
     DistributionalPPO.__init__(
@@ -534,9 +564,14 @@ def test_popart_save_load_retains_disabled_state(
     loaded = DistributionalPPO.load(save_path, value_scale_max_rel_step=0.5)
 
     assert isinstance(loaded, DistributionalPPO)
-    loaded_logger = getattr(loaded, "logger", None)
-    # Check duck typing - logger should have records dict (may be _CaptureLogger or stub equivalent)
-    assert loaded_logger is not None, "Loaded model should have a logger"
-    assert hasattr(loaded_logger, "records"), "Logger should have records dict"
-    assert loaded_logger.records.get("config/popart/enabled") == pytest.approx(0.0)
-    assert loaded_logger.records.get("config/popart/requested_enabled") == pytest.approx(0.0)
+    # The reload initialises PopArt while the model is being constructed, before
+    # any logger is attached, so the values it would have recorded are held in
+    # _popart_config_logs and replayed once a logger arrives. What this pins down
+    # is that the disabled state survived the round trip and the requested
+    # configuration did not come back with it.
+    loaded_logs = getattr(loaded, "_popart_config_logs", None)
+    assert loaded_logs is not None, "Loaded model should carry its PopArt config logs"
+    assert loaded_logs.get("config/popart/enabled") == pytest.approx(0.0)
+    assert loaded_logs.get("config/popart/requested_enabled") == pytest.approx(0.0)
+    assert loaded._popart_controller is None
+    assert getattr(loaded, "_popart_cfg_serialized", None) is None

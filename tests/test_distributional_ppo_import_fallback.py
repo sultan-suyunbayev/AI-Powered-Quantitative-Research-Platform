@@ -4,6 +4,7 @@ Tests for import fallback paths in distributional_ppo.py.
 These tests require careful handling of sys.modules to simulate
 missing dependencies.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -66,12 +67,14 @@ class TestImportFallbackPaths:
 class TestPatchRandForTests:
     """Test _patch_rand_for_tests function."""
 
-    def test_patch_applied_in_test_env(self):
-        """Verify patch is applied in test environment."""
+    def test_import_leaves_torch_rand_alone(self):
+        """The module must not swap torch.rand out under the test runner."""
         import torch
 
-        # In test environment, torch.rand should be patched
-        assert hasattr(torch, "_distributional_rand_patch")
+        import distributional_ppo  # noqa: F401
+
+        assert not hasattr(torch, "_distributional_rand_patch")
+        assert torch.rand(4096).min().item() < 0.5
 
 
 class TestModuleHelperFunctions:

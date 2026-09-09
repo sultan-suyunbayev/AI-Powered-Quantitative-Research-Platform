@@ -162,13 +162,18 @@ def test_ts_ms_none_skips_multipliers_without_logging(caplog):
         liquidity_seasonality=liq_mult,
         spread_seasonality=spr_mult,
     )
+    # caplog captures for the whole test, and building the simulator above
+    # logs from execution_sim wherever a filters file exists (its metadata, at
+    # INFO). The subject here is what set_market_snapshot logs, so start the
+    # window at the call.
+    caplog.clear()
     with caplog.at_level(logging.WARNING, logger="execution_sim"):
-        sim.set_market_snapshot(
-            bid=100.0, ask=101.0, liquidity=5.0, spread_bps=1.0, ts_ms=None
-        )
+        sim.set_market_snapshot(bid=100.0, ask=101.0, liquidity=5.0, spread_bps=1.0, ts_ms=None)
     assert sim._last_liquidity == 5.0
     assert sim._last_spread_bps == 1.0
-    assert not caplog.records
+    # Only execution_sim must stay quiet; constructing the simulator also warns
+    # from impl_quantizer when no filters file is present, which is unrelated.
+    assert [r for r in caplog.records if r.name.startswith("execution_sim")] == []
 
 
 def test_seasonality_linear_interpolation():

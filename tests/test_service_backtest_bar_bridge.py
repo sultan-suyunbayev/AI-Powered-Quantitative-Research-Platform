@@ -53,7 +53,9 @@ def _bar_bridge_cls(monkeypatch: pytest.MonkeyPatch) -> type[Any]:
     def _load_specs(*_args: Any, **_kwargs: Any) -> tuple[dict, dict]:  # pragma: no cover - stub
         return {}, {}
 
-    def _round_price_to_tick(price: float, *_args: Any, **_kwargs: Any) -> float:  # pragma: no cover - stub
+    def _round_price_to_tick(
+        price: float, *_args: Any, **_kwargs: Any
+    ) -> float:  # pragma: no cover - stub
         return float(price)
 
     specs_mod.load_specs = _load_specs  # type: ignore[attr-defined]
@@ -117,7 +119,10 @@ def test_spot_signal_envelope_payload_passthrough(bar_bridge_cls: type[Any]) -> 
         edge_bps=50.0,
         cost_bps=0.0,
         net_bps=50.0,
-        turnover_usd=100.0,
+        # turnover_usd caps the notional the bar may trade. Moving a flat
+        # 1 000 USD book to a weight of 0.5 is a 500 USD trade; a cap of 100
+        # would scale the fill down to a weight of 0.1.
+        turnover_usd=500.0,
         act_now=True,
         impact=0.0,
         impact_mode="none",
@@ -231,7 +236,10 @@ def test_open_price_field_updates_equity(bar_bridge_cls: type[Any]) -> None:
         edge_bps=50.0,
         cost_bps=0.0,
         net_bps=50.0,
-        turnover_usd=100.0,
+        # turnover_usd caps the notional the bar may trade. Moving a flat
+        # 1 000 USD book to a weight of 0.5 is a 500 USD trade; a cap of 100
+        # would scale the fill down to a weight of 0.1.
+        turnover_usd=500.0,
         act_now=True,
         impact=0.0,
         impact_mode="none",

@@ -5,8 +5,11 @@ import pandas as pd
 import fetch_all_data_patch
 
 
+BAR_SECONDS = 14_400  # load_all_data aligns onto a 4h grid, then de-duplicates
+
+
 def _build_base_frame(symbol: str) -> pd.DataFrame:
-    timestamps = [0, 3600, 7200]
+    timestamps = [0, BAR_SECONDS, 2 * BAR_SECONDS]
     return pd.DataFrame(
         {
             "timestamp": timestamps,
@@ -36,7 +39,7 @@ def test_load_all_data_preserves_single_fear_greed_column(tmp_path, monkeypatch)
     fng_path = data_dir / "fear_greed.csv"
     fng_df = pd.DataFrame(
         {
-            "timestamp": [0, 3600, 7200],
+            "timestamp": [0, BAR_SECONDS, 2 * BAR_SECONDS],
             "fear_greed_value": [10.0, 20.0, 30.0],
         }
     )
@@ -61,7 +64,11 @@ def test_load_all_data_converts_millisecond_timestamps(tmp_path, monkeypatch):
     symbol = "ETHUSDT"
     base_ts_ms = 1_650_000_000_000
     df = _build_base_frame(symbol)
-    df["timestamp"] = [base_ts_ms, base_ts_ms + 3_600_000, base_ts_ms + 7_200_000]
+    df["timestamp"] = [
+        base_ts_ms,
+        base_ts_ms + BAR_SECONDS * 1000,
+        base_ts_ms + 2 * BAR_SECONDS * 1000,
+    ]
 
     candle_path = tmp_path / f"{symbol}.feather"
     candle_path.write_text("dummy")
@@ -76,8 +83,8 @@ def test_load_all_data_converts_millisecond_timestamps(tmp_path, monkeypatch):
     all_dfs, _ = fetch_all_data_patch.load_all_data([os.fspath(candle_path)])
     loaded = all_dfs[symbol]
 
-    expected_start = (base_ts_ms // 1000 // 3600) * 3600
-    expected_timestamps = [expected_start + offset for offset in (0, 3600, 7200)]
+    expected_start = (base_ts_ms // 1000 // BAR_SECONDS) * BAR_SECONDS
+    expected_timestamps = [expected_start + offset for offset in (0, BAR_SECONDS, 2 * BAR_SECONDS)]
 
     assert list(loaded["timestamp"]) == expected_timestamps
 

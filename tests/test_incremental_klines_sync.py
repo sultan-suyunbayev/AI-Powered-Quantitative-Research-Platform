@@ -56,7 +56,7 @@ def test_sync_symbol_creates_full_history(monkeypatch, tmp_path: Path):
     assert appended == 10
     out_file = tmp_path / f"{symbol}.csv"
     assert out_file.exists()
-    rows = out_file.read_text().strip().splitlines()
+    rows = out_file.read_text(encoding="utf-8").strip().splitlines()
     # header + 10 rows
     assert len(rows) == 11
     assert rows[0].startswith("open_time")
@@ -90,7 +90,7 @@ def test_sync_symbol_appends_missing(monkeypatch, tmp_path: Path):
     appended = incremental_klines.sync_symbol(symbol, close_lag_ms=0)
 
     assert appended == 7
-    rows = out_file.read_text().strip().splitlines()
+    rows = out_file.read_text(encoding="utf-8").strip().splitlines()
     # header + 10 rows total
     assert len(rows) == 11
     assert rows[-1].split(",")[0] == str(9 * INTERVAL)
@@ -121,7 +121,7 @@ def test_sync_symbol_returns_zero_when_up_to_date(monkeypatch, tmp_path: Path):
     appended = incremental_klines.sync_symbol(symbol, close_lag_ms=0)
 
     assert appended == 0
-    rows = out_file.read_text().strip().splitlines()
+    rows = out_file.read_text(encoding="utf-8").strip().splitlines()
     assert len(rows) == 11
 
 
@@ -156,7 +156,7 @@ def test_sync_symbol_rebuilds_truncated_csv(monkeypatch, tmp_path: Path):
     appended = incremental_klines.sync_symbol(symbol, close_lag_ms=0)
 
     assert appended == 10
-    rows = out_file.read_text().strip().splitlines()
+    rows = out_file.read_text(encoding="utf-8").strip().splitlines()
     assert len(rows) == 11
     assert rows[1].split(",")[0] == str(0)
     assert rows[-1].split(",")[0] == str(9 * INTERVAL)
@@ -205,4 +205,3 @@ def test_sync_symbol_rewrites_truncated_history(monkeypatch, tmp_path: Path):
     # ensure we performed the truncated rebuild path (earliest lookup + full sync)
     assert call_order[0] == (0, 1)
     assert call_order[1] == (0, 12)
-

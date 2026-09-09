@@ -32,7 +32,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Optional, Dict, Any, List, Union
@@ -518,7 +518,9 @@ class AuditRecordBuilder:
         self._record.trader_id = trader_id
         return self
 
-    def order_id(self, order_id: str, client_order_id: Optional[str] = None) -> "AuditRecordBuilder":
+    def order_id(
+        self, order_id: str, client_order_id: Optional[str] = None
+    ) -> "AuditRecordBuilder":
         """Set order identifiers."""
         self._record.order_id = order_id
         self._record.client_order_id = client_order_id
@@ -590,7 +592,14 @@ class AuditRecordBuilder:
         return self
 
     def timestamp_datetime(self, dt: datetime) -> "AuditRecordBuilder":
-        """Set event timestamp from datetime."""
+        """Set event timestamp from datetime.
+
+        A naive value is taken as UTC, to match ``time.time_ns()`` and the
+        ``datetime.utcnow()`` this module builds its timestamps from.
+        ``datetime.timestamp()`` would otherwise read it as local time.
+        """
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
         self._record.event_timestamp_ns = int(dt.timestamp() * 1e9)
         return self
 
@@ -773,7 +782,9 @@ def create_order_filled_record(
     Returns:
         AuditRecord for order fill.
     """
-    event_type = AuditEventType.ORDER_PARTIALLY_FILLED if is_partial else AuditEventType.ORDER_FILLED
+    event_type = (
+        AuditEventType.ORDER_PARTIALLY_FILLED if is_partial else AuditEventType.ORDER_FILLED
+    )
 
     fill_details = details.copy() if details else {}
     if is_partial and remaining_quantity is not None:

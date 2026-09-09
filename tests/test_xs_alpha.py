@@ -36,9 +36,7 @@ def _signals_and_fwd(seed=0, T=20, syms=("S0", "S1", "S2", "S3", "S4")):
             fwd = float(rng.normal())
             rows.append((ts, sym, fwd, fwd, float(rng.normal())))  # good = fwd, noise = random
     idx = pd.MultiIndex.from_tuples([(t, s) for t, s, *_ in rows], names=["ts_ms", "symbol"])
-    signals = pd.DataFrame(
-        {"good": [r[3] for r in rows], "noise": [r[4] for r in rows]}, index=idx
-    )
+    signals = pd.DataFrame({"good": [r[3] for r in rows], "noise": [r[4] for r in rows]}, index=idx)
     fwd = pd.Series([r[2] for r in rows], index=idx, name="fwd_return")
     return signals, fwd
 
@@ -88,17 +86,23 @@ def test_expected_utility_from_quantiles():
     q = pd.DataFrame({"q0": [1.0, 4.0], "q1": [2.0, 5.0], "q2": [3.0, 6.0]})
     eu = expected_utility_from_quantiles(q)
     assert eu.tolist() == pytest.approx([2.0, 5.0])
-    # cvar: нижние квантили
-    cv = expected_utility_from_quantiles(q, cvar_alpha=0.34)  # k=1 → минимум строки
-    assert cv.tolist() == pytest.approx([1.0, 4.0])
+    # CVaR считается кусочно-линейным интегрированием (как в обучающей цели),
+    # а НЕ как наивное mean(нижние-k): для [1,2,3] и α=0.34 хвост чуть заходит
+    # во второй квантиль, поэтому значение немного выше минимума строки.
+    cv = expected_utility_from_quantiles(q, cvar_alpha=0.34)
+    row_min = q.min(axis=1)
+    row_mean = q.mean(axis=1)
+    assert (cv >= row_min).all(), "CVaR не может быть ниже минимума"
+    assert (cv < row_mean).all(), "CVaR хвоста ниже среднего"
+    assert cv.tolist() == pytest.approx(row_min.tolist(), abs=0.05)
 
 
 def test_conformal_confidence_from_widths():
     widths = pd.Series([0.1, 0.2, 0.4], index=["A", "B", "C"])
     conf = conformal_confidence_from_widths(widths, baseline_width=0.2, min_conf=0.5)
-    assert conf["A"] == pytest.approx(1.0)   # узкий интервал → max доверие (clip)
+    assert conf["A"] == pytest.approx(1.0)  # узкий интервал → max доверие (clip)
     assert conf["B"] == pytest.approx(1.0)
-    assert conf["C"] == pytest.approx(0.5)   # широкий → пол доверия
+    assert conf["C"] == pytest.approx(0.5)  # широкий → пол доверия
 
 
 # ---------------------------------------------------------------------------
@@ -108,13 +112,12 @@ def _price_panel():
     ts = [1_700_000_000, 1_700_086_400, 1_700_172_800]
     # разные траектории доходностей по символам → есть cross-sectional дисперсия (IC определён)
     closes = {
-        "A": [100.0, 110.0, 115.5],   # r0=0.10, r1=0.05
-        "B": [100.0, 120.0, 132.0],   # r0=0.20, r1=0.10
+        "A": [100.0, 110.0, 115.5],  # r0=0.10, r1=0.05
+        "B": [100.0, 120.0, 132.0],  # r0=0.20, r1=0.10
         "C": [100.0, 105.0, 120.75],  # r0=0.05, r1=0.15
     }
     frames = {
-        sym: pd.DataFrame({"timestamp": ts, "symbol": sym, "close": c})
-        for sym, c in closes.items()
+        sym: pd.DataFrame({"timestamp": ts, "symbol": sym, "close": c}) for sym, c in closes.items()
     }
     return PanelBuilder.from_frames(frames)
 

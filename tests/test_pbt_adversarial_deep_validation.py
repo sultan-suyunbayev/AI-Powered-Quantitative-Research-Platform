@@ -24,6 +24,7 @@ from unittest.mock import MagicMock, Mock, patch, call
 import copy
 
 import pytest
+
 torch = pytest.importorskip("torch")
 import torch.nn as nn
 import numpy as np
@@ -56,7 +57,9 @@ class TestEdgeCases:
         perturb = StatePerturbation(config)
 
         state = torch.randn(4, 10)
-        def loss_fn(s): return (s ** 2).sum()
+
+        def loss_fn(s):
+            return (s**2).sum()
 
         delta = perturb.fgsm_attack(state, loss_fn)
 
@@ -68,7 +71,9 @@ class TestEdgeCases:
         perturb = StatePerturbation(config)
 
         state = torch.randn(4, 10)
-        def loss_fn(s): return (s ** 2).sum()
+
+        def loss_fn(s):
+            return (s**2).sum()
 
         delta = perturb.fgsm_attack(state, loss_fn)
 
@@ -81,7 +86,9 @@ class TestEdgeCases:
         perturb = StatePerturbation(config)
 
         state = torch.randn(1, 10)  # Single sample
-        def loss_fn(s): return (s ** 2).sum()
+
+        def loss_fn(s):
+            return (s**2).sum()
 
         delta = perturb.generate_perturbation(state, loss_fn)
 
@@ -93,7 +100,9 @@ class TestEdgeCases:
         perturb = StatePerturbation(config)
 
         state = torch.randn(1000, 10)  # Large batch
-        def loss_fn(s): return (s ** 2).sum()
+
+        def loss_fn(s):
+            return (s**2).sum()
 
         delta = perturb.generate_perturbation(state, loss_fn)
 
@@ -105,7 +114,9 @@ class TestEdgeCases:
         perturb = StatePerturbation(config)
 
         state = torch.randn(4, 64, 64, 3)  # High-dim state
-        def loss_fn(s): return (s ** 2).sum()
+
+        def loss_fn(s):
+            return (s**2).sum()
 
         delta = perturb.generate_perturbation(state, loss_fn)
 
@@ -199,9 +210,10 @@ class TestErrorHandling:
         perturb = StatePerturbation(config)
 
         state = torch.randn(4, 10)
-        state[0, 0] = float('nan')
+        state[0, 0] = float("nan")
 
-        def loss_fn(s): return (s ** 2).sum()
+        def loss_fn(s):
+            return (s**2).sum()
 
         # Should handle NaN gracefully or raise clear error
         try:
@@ -218,9 +230,10 @@ class TestErrorHandling:
         perturb = StatePerturbation(config)
 
         state = torch.randn(4, 10)
-        state[0, 0] = float('inf')
+        state[0, 0] = float("inf")
 
-        def loss_fn(s): return (s ** 2).sum()
+        def loss_fn(s):
+            return (s**2).sum()
 
         try:
             delta = perturb.generate_perturbation(state, loss_fn)
@@ -234,7 +247,9 @@ class TestErrorHandling:
         perturb = StatePerturbation(config)
 
         state = torch.randn(4, 10)
-        def bad_loss_fn(s): return torch.tensor(float('nan'))
+
+        def bad_loss_fn(s):
+            return torch.tensor(float("nan"))
 
         try:
             delta = perturb.generate_perturbation(state, bad_loss_fn)
@@ -271,13 +286,17 @@ class TestNumericalStability:
 
         for _ in range(10):  # Multiple trials
             state = torch.randn(10, 20)
-            def loss_fn(s): return (s ** 2).sum()
+
+            def loss_fn(s):
+                return (s**2).sum()
 
             delta = perturb.generate_perturbation(state, loss_fn)
 
             # Check L-inf norm
             max_norm = torch.abs(delta).max().item()
-            assert max_norm <= config.epsilon + 1e-6, f"L-inf norm {max_norm} exceeds epsilon {config.epsilon}"
+            assert (
+                max_norm <= config.epsilon + 1e-6
+            ), f"L-inf norm {max_norm} exceeds epsilon {config.epsilon}"
 
     def test_perturbation_numerical_stability_l2(self):
         """Test L2 perturbation maintains bounds."""
@@ -286,7 +305,9 @@ class TestNumericalStability:
 
         for _ in range(10):
             state = torch.randn(10, 20)
-            def loss_fn(s): return (s ** 2).sum()
+
+            def loss_fn(s):
+                return (s**2).sum()
 
             delta = perturb.generate_perturbation(state, loss_fn)
 
@@ -351,7 +372,9 @@ class TestStateConsistency:
 
         # Record multiple steps
         for step in range(10):
-            member.record_step(step, performance=0.5 + step * 0.01, hyperparams={"lr": 0.001 + step * 0.0001})
+            member.record_step(
+                step, performance=0.5 + step * 0.01, hyperparams={"lr": 0.001 + step * 0.0001}
+            )
 
         assert len(member.history) == 10
 
@@ -493,7 +516,10 @@ class TestMemoryManagement:
 
         for _ in range(100):
             state = torch.randn(10, 20)
-            def loss_fn(s): return (s ** 2).sum()
+
+            def loss_fn(s):
+                return (s**2).sum()
+
             delta = perturb.generate_perturbation(state, loss_fn)
             del delta
 
@@ -625,6 +651,7 @@ class TestIntegrationRealism:
         # Create mock models
         models = []
         for member in population:
+
             def model_factory(**kwargs):
                 model = MagicMock()
                 model.policy = MagicMock()
@@ -648,10 +675,7 @@ class TestIntegrationRealism:
 
                 # End update
                 new_state, new_hp, _ = coordinator.on_member_update_end(
-                    member,
-                    performance=performance,
-                    step=step,
-                    model_state_dict=model.state_dict()
+                    member, performance=performance, step=step, model_state_dict=model.state_dict()
                 )
 
                 # Apply PBT updates
@@ -708,7 +732,9 @@ class TestPerformance:
         perturb = StatePerturbation(config)
 
         state = torch.randn(64, 100)  # Realistic batch size
-        def loss_fn(s): return (s ** 2).sum()
+
+        def loss_fn(s):
+            return (s**2).sum()
 
         start = time.time()
         for _ in range(10):
@@ -731,17 +757,23 @@ class TestPerformance:
 
             scheduler = PBTScheduler(config, seed=42)
 
-            start = time.time()
+            # perf_counter, not time(): the wall clock ticks in ~15.6 ms steps
+            # on Windows, so each of these read 0.0 and the ratio below became
+            # 0 < 0.
+            start = time.perf_counter()
             population = scheduler.initialize_population()
 
             for member in population:
                 scheduler.update_performance(member, 0.5, 1)
 
-            elapsed = time.time() - start
+            elapsed = time.perf_counter() - start
             times.append(elapsed)
 
-        # Time should scale roughly linearly (not exponentially)
-        assert times[-1] < times[0] * 20, "PBT scaling is not linear"
+        # Time should scale roughly linearly (not exponentially). The smallest
+        # population is quick enough that its measurement is mostly overhead, so
+        # compare against a floor rather than against zero.
+        baseline = max(times[0], 1e-4)
+        assert times[-1] < baseline * 20, "PBT scaling is not linear"
 
 
 class TestDefaultsComprehensive:
@@ -772,7 +804,7 @@ class TestDefaultsComprehensive:
         config_path = "configs/config_pbt_adversarial.yaml"
 
         if os.path.exists(config_path):
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             assert data["pbt"]["enabled"] is True, "PBT must be enabled in YAML"

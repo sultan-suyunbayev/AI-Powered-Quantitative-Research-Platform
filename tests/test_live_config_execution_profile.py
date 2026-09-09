@@ -65,7 +65,9 @@ def test_live_config_execution_profile_reaches_executor():
     cfg_path = Path(__file__).resolve().parents[1] / "configs" / "config_live.yaml"
     cfg = load_config(str(cfg_path))
 
-    assert cfg.execution_profile == ExecutionProfile.MKT_OPEN_NEXT_H1
+    # configs/config_live.yaml declares MKT_OPEN_NEXT_4H since the move to a
+    # 4-hour timeframe.
+    assert cfg.execution_profile == ExecutionProfile.MKT_OPEN_NEXT_4H
     assert isinstance(cfg.execution_params, ExecutionParams)
 
     expected_params = cfg.execution_params.model_dump(exclude_unset=False)
@@ -95,11 +97,11 @@ def test_live_config_execution_profile_reaches_executor():
         run_config=cfg,
     )
 
-    expected_profile_text = str(ExecutionProfile.MKT_OPEN_NEXT_H1)
+    expected_profile_text = str(ExecutionProfile.MKT_OPEN_NEXT_4H)
 
     assert sim.received_profile == expected_profile_text
     assert sim.received_params == expected_params
     assert sim.execution_profile == expected_profile_text
     assert sim.execution_params == expected_params
-    assert executor._exec_profile == ExecutionProfile.MKT_OPEN_NEXT_H1
+    assert executor._exec_profile == ExecutionProfile.MKT_OPEN_NEXT_4H
     assert executor._exec_params.model_dump(exclude_unset=False) == expected_params

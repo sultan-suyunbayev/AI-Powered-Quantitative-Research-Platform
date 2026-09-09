@@ -7,6 +7,7 @@ Tests that VGS correctly tracks policy parameters after save/load cycle.
 import tempfile
 from pathlib import Path
 import pytest
+
 gym = pytest.importorskip("gymnasium")
 pytest.importorskip("torch")
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -50,7 +51,9 @@ class TestVGSParameterTracking:
             vgs_params = loaded_model._variance_gradient_scaler._parameters
 
             assert vgs_params is not None, "VGS _parameters should not be None"
-            assert len(vgs_params) == len(policy_params), f"VGS should track all {len(policy_params)} parameters"
+            assert len(vgs_params) == len(
+                policy_params
+            ), f"VGS should track all {len(policy_params)} parameters"
 
             # Check that VGS tracks the SAME parameter objects as policy
             ids_policy = set(id(p) for p in policy_params)
@@ -136,23 +139,29 @@ class TestVGSParameterTracking:
             model.save(save_path)
             loaded_model = DistributionalPPO.load(save_path, env=env)
 
-            # Collect some data
+            # Collect some data. collect_rollouts takes a callback as its second
+            # argument, and _last_obs is only primed by _setup_learn -- after a
+            # bare load() it is still None.
+            _, callback = loaded_model._setup_learn(
+                total_timesteps=loaded_model.n_steps, callback=None
+            )
+            callback.on_training_start(locals(), globals())
             loaded_model.collect_rollouts(
                 loaded_model.env,
-                loaded_model._last_obs,
+                callback,
                 loaded_model.rollout_buffer,
                 n_rollout_steps=loaded_model.n_steps,
             )
 
             # Compute gradients
             loaded_model.policy.optimizer.zero_grad()
-            _, loss_dict = loaded_model.train()
+            loaded_model.train()  # returns None
 
             # Check that VGS actually has statistics
             vgs = loaded_model._variance_gradient_scaler
-            assert vgs._grad_norm_ema is not None or vgs._step_count == 0, (
-                "VGS should track gradient statistics after training"
-            )
+            assert (
+                vgs._grad_norm_ema is not None or vgs._step_count == 0
+            ), "VGS should track gradient statistics after training"
 
     def test_multiple_save_load_cycles(self, env):
         """Test VGS correctness through multiple save/load cycles."""

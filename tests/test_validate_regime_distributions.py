@@ -10,6 +10,10 @@ def test_validate_regime_distributions_script():
     ref = repo_root / "configs" / "reference_regime_distributions.json"
     env = os.environ.copy()
     env["USE_DUMMY_ENV"] = "1"
+    # The script prints a check mark on success; on a legacy console the
+    # default encoding cannot represent it and the process dies at the last
+    # line. UTF-8 mode is what CI runs its other steps under.
+    env["PYTHONUTF8"] = "1"
     result = subprocess.run(
         [sys.executable, str(script), "--ref", str(ref), "--steps", "200", "--tolerance", "0.3"],
         env=env,

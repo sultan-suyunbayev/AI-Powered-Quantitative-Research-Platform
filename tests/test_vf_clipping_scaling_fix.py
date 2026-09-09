@@ -20,7 +20,10 @@ This test suite provides 100% coverage of the fix to ensure:
 5. Integration with Twin Critics + VF Clipping
 """
 
+import math
+
 import pytest
+
 torch = pytest.importorskip("torch")
 import numpy as np
 
@@ -34,13 +37,16 @@ class TestVFClippingScalingLogic:
 
     # ========== TEST 1: Verify clip_delta scaling with normalize_returns=True ==========
 
-    @pytest.mark.parametrize("ret_std,clip_range_vf,expected", [
-        (1.0, 0.2, 0.2),
-        (10.0, 0.2, 2.0),
-        (100.0, 0.2, 20.0),
-        (50.0, 0.1, 5.0),
-        (5.0, 0.3, 1.5),
-    ])
+    @pytest.mark.parametrize(
+        "ret_std,clip_range_vf,expected",
+        [
+            (1.0, 0.2, 0.2),
+            (10.0, 0.2, 2.0),
+            (100.0, 0.2, 20.0),
+            (50.0, 0.1, 5.0),
+            (5.0, 0.3, 1.5),
+        ],
+    )
     def test_clip_delta_scaling_with_normalization(self, ret_std, clip_range_vf, expected):
         """
         Test that clip_delta is correctly scaled by ret_std when normalize_returns=True.
@@ -58,16 +64,20 @@ class TestVFClippingScalingLogic:
         else:
             clip_delta = clip_range_vf
 
-        assert clip_delta == pytest.approx(expected, rel=1e-6), \
-            f"With ret_std={ret_std}, clip_delta should be {expected}, got {clip_delta}"
+        assert clip_delta == pytest.approx(
+            expected, rel=1e-6
+        ), f"With ret_std={ret_std}, clip_delta should be {expected}, got {clip_delta}"
 
     # ========== TEST 2: Verify clip_delta without normalization ==========
 
-    @pytest.mark.parametrize("ret_std,clip_range_vf", [
-        (1.0, 0.2),
-        (10.0, 0.2),
-        (100.0, 0.2),
-    ])
+    @pytest.mark.parametrize(
+        "ret_std,clip_range_vf",
+        [
+            (1.0, 0.2),
+            (10.0, 0.2),
+            (100.0, 0.2),
+        ],
+    )
     def test_clip_delta_no_scaling_without_normalization(self, ret_std, clip_range_vf):
         """
         Test that clip_delta is NOT scaled when normalize_returns=False.
@@ -84,16 +94,20 @@ class TestVFClippingScalingLogic:
         else:
             clip_delta = clip_range_vf
 
-        assert clip_delta == pytest.approx(clip_range_vf, rel=1e-6), \
-            f"Without normalization, clip_delta should be {clip_range_vf}, got {clip_delta}"
+        assert clip_delta == pytest.approx(
+            clip_range_vf, rel=1e-6
+        ), f"Without normalization, clip_delta should be {clip_range_vf}, got {clip_delta}"
 
     # ========== TEST 3: Verify value updates are not frozen with large ret_std ==========
 
-    @pytest.mark.parametrize("ret_std,clip_range_vf,expected_clip_delta", [
-        (10.0, 0.2, 2.0),
-        (100.0, 0.2, 20.0),
-        (50.0, 0.1, 5.0),
-    ])
+    @pytest.mark.parametrize(
+        "ret_std,clip_range_vf,expected_clip_delta",
+        [
+            (10.0, 0.2, 2.0),
+            (100.0, 0.2, 20.0),
+            (50.0, 0.1, 5.0),
+        ],
+    )
     def test_value_updates_not_frozen(self, ret_std, clip_range_vf, expected_clip_delta):
         """
         Test that value updates are not frozen with large ret_std.
@@ -113,10 +127,14 @@ class TestVFClippingScalingLogic:
             clip_delta = clip_range_vf
 
         # Verify clip_delta is correct
-        assert clip_delta == pytest.approx(expected_clip_delta, rel=1e-6), \
-            f"With ret_std={ret_std}, clip_delta should be {expected_clip_delta}, got {clip_delta}"
+        assert clip_delta == pytest.approx(
+            expected_clip_delta, rel=1e-6
+        ), f"With ret_std={ret_std}, clip_delta should be {expected_clip_delta}, got {clip_delta}"
 
-        # Simulate value clipping
+        # Simulate value clipping. Seeded: the assertion below is about the
+        # distribution, and an unseeded draw of 100 crosses any flat threshold
+        # near the mean often enough to matter.
+        torch.manual_seed(0)
         old_values_raw = torch.zeros(100, 1)  # Old values at 0
         new_values_raw = torch.randn(100, 1) * ret_std  # New values with std=ret_std
 
@@ -128,14 +146,22 @@ class TestVFClippingScalingLogic:
         )
 
         # Count how many values were clipped
-        clipped_count = ((clipped_values_raw != new_values_raw).sum().item())
+        clipped_count = (clipped_values_raw != new_values_raw).sum().item()
         clipped_percentage = clipped_count / len(new_values_raw) * 100
 
-        # With correct scaling, clipping percentage should be ~84% (standard normal clipped at ±0.2σ)
-        # Before fix with small clip_delta, it would be 99%+ (effectively frozen!)
-        # After fix, clipping percentage should be reasonable (<95%)
-        assert clipped_percentage < 95.0, \
-            f"Clipping percentage should be <95%, got {clipped_percentage:.1f}% (value network may be frozen!)"
+        # Once clip_delta scales with ret_std, the clipped fraction is just
+        # P(|z| > clip_range_vf) for a standard normal: 84.1% at 0.2, 92.0% at
+        # 0.1. Before the fix clip_delta stayed at clip_range_vf against raw
+        # values, which is 0.002 sigma at ret_std=100 -- effectively frozen.
+        # A flat "<95%" ceiling does not separate those two: 92.0% is the
+        # correct answer for clip_range_vf=0.1 and sits within sampling noise
+        # of 95%.
+        expected_fraction = math.erfc(clip_range_vf / math.sqrt(2.0))
+        assert clipped_percentage / 100.0 == pytest.approx(expected_fraction, abs=0.08), (
+            f"Clipping should track P(|z| > {clip_range_vf}) = "
+            f"{expected_fraction * 100:.1f}%, got {clipped_percentage:.1f}% "
+            f"(value network may be frozen!)"
+        )
 
     # ========== TEST 4: Verify clipping percentage with different ret_std values ==========
 
@@ -178,8 +204,9 @@ class TestVFClippingScalingLogic:
         # (standard normal distribution clipped at ±0.2 std clips ~84% of values)
         # This should hold regardless of ret_std (this is the fix!)
         # Statistical note: P(|N(0,1)| > 0.2) ≈ 0.84
-        assert 80.0 < clipped_percentage < 88.0, \
-            f"With ret_std={ret_std}, clipping percentage should be ~84%, got {clipped_percentage:.1f}%"
+        assert (
+            80.0 < clipped_percentage < 88.0
+        ), f"With ret_std={ret_std}, clipping percentage should be ~84%, got {clipped_percentage:.1f}%"
 
     # ========== TEST 5: Verify fix prevents value network freezing ==========
 
@@ -202,8 +229,9 @@ class TestVFClippingScalingLogic:
 
         # Expected clip_delta = 20.0 (not 0.2!)
         expected_clip_delta = 20.0
-        assert clip_delta == pytest.approx(expected_clip_delta, rel=1e-6), \
-            f"clip_delta should be {expected_clip_delta}, got {clip_delta}"
+        assert clip_delta == pytest.approx(
+            expected_clip_delta, rel=1e-6
+        ), f"clip_delta should be {expected_clip_delta}, got {clip_delta}"
 
         # Verify that with this clip_delta, the network is NOT frozen
         # Generate large updates (std=100)
@@ -223,8 +251,9 @@ class TestVFClippingScalingLogic:
 
         # With clip_delta=20.0, mean update should be significant (>1.0)
         # Before fix (clip_delta=0.2), mean update would be tiny (~0.1)
-        assert mean_update > 1.0, \
-            f"Mean update should be >1.0 (network not frozen), got {mean_update:.2f}"
+        assert (
+            mean_update > 1.0
+        ), f"Mean update should be >1.0 (network not frozen), got {mean_update:.2f}"
 
     # ========== TEST 6: Backward compatibility ==========
 
@@ -246,8 +275,9 @@ class TestVFClippingScalingLogic:
             clip_delta = clip_range_vf
 
         # With ret_std=1.0, clip_delta should equal clip_range_vf (backward compatible)
-        assert clip_delta == pytest.approx(clip_range_vf, rel=1e-6), \
-            f"With ret_std=1.0, clip_delta should be {clip_range_vf}, got {clip_delta}"
+        assert clip_delta == pytest.approx(
+            clip_range_vf, rel=1e-6
+        ), f"With ret_std=1.0, clip_delta should be {clip_range_vf}, got {clip_delta}"
 
     # ========== TEST 7: Edge cases ==========
 
@@ -318,8 +348,9 @@ class TestVFClippingScalingLogic:
         # Verify the difference
         assert clip_delta_before == 0.2
         assert clip_delta_after == 2.0
-        assert clip_delta_after == 10.0 * clip_delta_before, \
-            "After fix, clip_delta should be scaled by ret_std"
+        assert (
+            clip_delta_after == 10.0 * clip_delta_before
+        ), "After fix, clip_delta should be scaled by ret_std"
 
         # Show impact on clipping percentage
         normalized_values = torch.randn(10000, 1)
@@ -336,10 +367,12 @@ class TestVFClippingScalingLogic:
 
         # Before fix: ~96%+ clipped (value network frozen!)
         # After fix: ~84% clipped (as designed for clip_range_vf=0.2)
-        assert clipped_pct_before > 96.0, \
-            f"Before fix: should clip >96% (got {clipped_pct_before:.1f}%)"
-        assert 80.0 < clipped_pct_after < 88.0, \
-            f"After fix: should clip ~84% (got {clipped_pct_after:.1f}%)"
+        assert (
+            clipped_pct_before > 96.0
+        ), f"Before fix: should clip >96% (got {clipped_pct_before:.1f}%)"
+        assert (
+            80.0 < clipped_pct_after < 88.0
+        ), f"After fix: should clip ~84% (got {clipped_pct_after:.1f}%)"
 
     # ========== TEST 9: Verify fix in all modes ==========
 
@@ -361,8 +394,7 @@ class TestVFClippingScalingLogic:
             clip_delta = clip_range_vf
 
         # Verify
-        assert clip_delta == 2.0, \
-            f"For mode={mode}, clip_delta should be 2.0, got {clip_delta}"
+        assert clip_delta == 2.0, f"For mode={mode}, clip_delta should be 2.0, got {clip_delta}"
 
     # ========== TEST 10: Mathematical correctness ==========
 
@@ -385,12 +417,10 @@ class TestVFClippingScalingLogic:
         normalized_values = torch.randn(20000, 1)
 
         # Clip in normalized space
-        clipped_normalized = torch.clamp(
-            normalized_values,
-            min=-clip_range_vf,
-            max=clip_range_vf
+        clipped_normalized = torch.clamp(normalized_values, min=-clip_range_vf, max=clip_range_vf)
+        clipped_pct_normalized = (
+            (clipped_normalized != normalized_values).sum().item() / len(normalized_values) * 100
         )
-        clipped_pct_normalized = (clipped_normalized != normalized_values).sum().item() / len(normalized_values) * 100
 
         # Convert to raw space
         raw_values = normalized_values * ret_std
@@ -398,28 +428,30 @@ class TestVFClippingScalingLogic:
         # Clip in raw space WITH SCALING (fix)
         clip_delta_scaled = clip_range_vf * ret_std
         clipped_raw_with_scaling = torch.clamp(
-            raw_values,
-            min=-clip_delta_scaled,
-            max=clip_delta_scaled
+            raw_values, min=-clip_delta_scaled, max=clip_delta_scaled
         )
-        clipped_pct_raw_with_scaling = (clipped_raw_with_scaling != raw_values).sum().item() / len(raw_values) * 100
+        clipped_pct_raw_with_scaling = (
+            (clipped_raw_with_scaling != raw_values).sum().item() / len(raw_values) * 100
+        )
 
         # Clip in raw space WITHOUT SCALING (bug)
         clip_delta_unscaled = clip_range_vf
         clipped_raw_without_scaling = torch.clamp(
-            raw_values,
-            min=-clip_delta_unscaled,
-            max=clip_delta_unscaled
+            raw_values, min=-clip_delta_unscaled, max=clip_delta_unscaled
         )
-        clipped_pct_raw_without_scaling = (clipped_raw_without_scaling != raw_values).sum().item() / len(raw_values) * 100
+        clipped_pct_raw_without_scaling = (
+            (clipped_raw_without_scaling != raw_values).sum().item() / len(raw_values) * 100
+        )
 
         # Verify that scaling preserves the clipping percentage
-        assert abs(clipped_pct_normalized - clipped_pct_raw_with_scaling) < 3.0, \
-            f"With scaling: clipping % should be similar ({clipped_pct_normalized:.1f}% vs {clipped_pct_raw_with_scaling:.1f}%)"
+        assert (
+            abs(clipped_pct_normalized - clipped_pct_raw_with_scaling) < 3.0
+        ), f"With scaling: clipping % should be similar ({clipped_pct_normalized:.1f}% vs {clipped_pct_raw_with_scaling:.1f}%)"
 
         # Without scaling, clipping percentage should be much higher (approaching 100%)
-        assert clipped_pct_raw_without_scaling > clipped_pct_normalized + 5.0, \
-            f"Without scaling: clipping % should be much higher ({clipped_pct_raw_without_scaling:.1f}% vs {clipped_pct_normalized:.1f}%)"
+        assert (
+            clipped_pct_raw_without_scaling > clipped_pct_normalized + 5.0
+        ), f"Without scaling: clipping % should be much higher ({clipped_pct_raw_without_scaling:.1f}% vs {clipped_pct_normalized:.1f}%)"
 
 
 if __name__ == "__main__":

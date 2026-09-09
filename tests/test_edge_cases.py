@@ -8,6 +8,8 @@ import sys
 import pytest
 
 torch = pytest.importorskip("torch")
+from conftest import TORCH_AVAILABLE
+
 pytest.importorskip("gymnasium")
 
 from distributional_ppo import DistributionalPPO
@@ -15,9 +17,9 @@ from distributional_ppo import DistributionalPPO
 
 def test_edge_case_single_atom():
     """Test with single atom (should be identity)"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Single Atom")
-    print("="*60)
+    print("=" * 60)
 
     algo = DistributionalPPO.__new__(DistributionalPPO)
 
@@ -31,7 +33,10 @@ def test_edge_case_single_atom():
     assert torch.allclose(projected, probs), "Single atom should be identity"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * atoms).sum()
     loss.backward()
     assert probs.grad is not None, "Gradient should exist"
 
@@ -41,9 +46,9 @@ def test_edge_case_single_atom():
 
 def test_edge_case_all_same_bounds():
     """Test when ALL atoms have same_bounds (no shift)"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: All Same Bounds (Identity Projection)")
-    print("="*60)
+    print("=" * 60)
 
     algo = DistributionalPPO.__new__(DistributionalPPO)
 
@@ -64,11 +69,15 @@ def test_edge_case_all_same_bounds():
     assert torch.allclose(projected, probs, atol=1e-4), "Identity projection should preserve probs"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist"
-    assert not torch.allclose(logits.grad, torch.zeros_like(logits.grad)), \
-        "Gradient should be non-zero"
+    assert not torch.allclose(
+        logits.grad, torch.zeros_like(logits.grad)
+    ), "Gradient should be non-zero"
 
     print(f"✅ All same bounds test passed")
     print(f"   Max difference from identity: {(projected - probs).abs().max().item():.2e}")
@@ -77,9 +86,9 @@ def test_edge_case_all_same_bounds():
 
 def test_edge_case_no_same_bounds():
     """Test when NO atoms have same_bounds (large shift)"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: No Same Bounds (Large Shift)")
-    print("="*60)
+    print("=" * 60)
 
     algo = DistributionalPPO.__new__(DistributionalPPO)
 
@@ -100,16 +109,21 @@ def test_edge_case_no_same_bounds():
     )
 
     # Check validity
-    assert torch.allclose(projected.sum(dim=1), torch.ones(batch_size), atol=1e-5), \
-        "Projected probs should sum to 1"
+    assert torch.allclose(
+        projected.sum(dim=1), torch.ones(batch_size), atol=1e-5
+    ), "Projected probs should sum to 1"
     assert torch.all(projected >= 0), "Projected probs should be non-negative"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * target_atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist"
-    assert not torch.allclose(logits.grad, torch.zeros_like(logits.grad)), \
-        "Gradient should be non-zero"
+    assert not torch.allclose(
+        logits.grad, torch.zeros_like(logits.grad)
+    ), "Gradient should be non-zero"
 
     print(f"✅ No same bounds test passed")
     return True
@@ -117,9 +131,9 @@ def test_edge_case_no_same_bounds():
 
 def test_edge_case_mixed_same_bounds():
     """Test when some batch items have same_bounds, others don't"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Mixed Same Bounds")
-    print("="*60)
+    print("=" * 60)
 
     algo = DistributionalPPO.__new__(DistributionalPPO)
 
@@ -140,19 +154,24 @@ def test_edge_case_mixed_same_bounds():
     )
 
     # Check validity for all batch items
-    assert torch.allclose(projected.sum(dim=1), torch.ones(batch_size), atol=1e-5), \
-        "All projected probs should sum to 1"
+    assert torch.allclose(
+        projected.sum(dim=1), torch.ones(batch_size), atol=1e-5
+    ), "All projected probs should sum to 1"
     assert torch.all(projected >= 0), "All projected probs should be non-negative"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * target_atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist"
 
     # Check that ALL batch items have gradients
     grad_norms_per_batch = logits.grad.abs().sum(dim=1)
-    assert torch.all(grad_norms_per_batch > 1e-6), \
-        "All batch items should have non-negligible gradients"
+    assert torch.all(
+        grad_norms_per_batch > 1e-6
+    ), "All batch items should have non-negligible gradients"
 
     print(f"✅ Mixed same bounds test passed")
     print(f"   Gradient norms per batch: {grad_norms_per_batch.tolist()}")
@@ -161,9 +180,9 @@ def test_edge_case_mixed_same_bounds():
 
 def test_edge_case_extreme_shift():
     """Test with extreme shift outside target range"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Extreme Shift (Clipping)")
-    print("="*60)
+    print("=" * 60)
 
     algo = DistributionalPPO.__new__(DistributionalPPO)
 
@@ -186,16 +205,21 @@ def test_edge_case_extreme_shift():
 
     # Should clamp and project all mass to v_max
     # (all atoms above v_max)
-    assert torch.allclose(projected.sum(dim=1), torch.ones(batch_size), atol=1e-5), \
-        "Projected probs should sum to 1"
+    assert torch.allclose(
+        projected.sum(dim=1), torch.ones(batch_size), atol=1e-5
+    ), "Projected probs should sum to 1"
 
     # Most mass should be at the upper end
-    upper_half_mass = projected[:, num_atoms//2:].sum(dim=1)
-    assert torch.all(upper_half_mass > 0.9), \
-        "Most mass should be in upper half for large positive shift"
+    upper_half_mass = projected[:, num_atoms // 2 :].sum(dim=1)
+    assert torch.all(
+        upper_half_mass > 0.9
+    ), "Most mass should be in upper half for large positive shift"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * target_atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist even with extreme shift"
 
@@ -206,9 +230,9 @@ def test_edge_case_extreme_shift():
 
 def test_edge_case_batch_size_one():
     """Test with batch size = 1"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Batch Size = 1")
-    print("="*60)
+    print("=" * 60)
 
     algo = DistributionalPPO.__new__(DistributionalPPO)
 
@@ -226,11 +250,13 @@ def test_edge_case_batch_size_one():
     )
 
     assert projected.shape == (batch_size, num_atoms), "Shape should be correct"
-    assert torch.allclose(projected.sum(), torch.tensor(1.0), atol=1e-5), \
-        "Probs should sum to 1"
+    assert torch.allclose(projected.sum(), torch.tensor(1.0), atol=1e-5), "Probs should sum to 1"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * target_atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist"
 
@@ -240,9 +266,9 @@ def test_edge_case_batch_size_one():
 
 def test_edge_case_large_batch():
     """Test with large batch size"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Large Batch Size")
-    print("="*60)
+    print("=" * 60)
 
     algo = DistributionalPPO.__new__(DistributionalPPO)
 
@@ -264,12 +290,16 @@ def test_edge_case_large_batch():
     )
 
     # Check all batch items are valid
-    assert torch.allclose(projected.sum(dim=1), torch.ones(batch_size), atol=1e-5), \
-        "All batch items should sum to 1"
+    assert torch.allclose(
+        projected.sum(dim=1), torch.ones(batch_size), atol=1e-5
+    ), "All batch items should sum to 1"
     assert torch.all(projected >= 0), "All probabilities should be non-negative"
 
     # Test gradients
-    loss = projected.sum()
+    # A plain .sum() over a probability vector is constant (each row sums to 1),
+    # so its gradient is zero by construction. Weight by the atoms instead: that
+    # is the expected value, which is what the projection is there to preserve.
+    loss = (projected * target_atoms).sum()
     loss.backward()
     assert logits.grad is not None, "Gradient should exist"
 
@@ -287,9 +317,9 @@ def main():
     if not TORCH_AVAILABLE:
         return 0
 
-    print("="*80)
+    print("=" * 80)
     print("EDGE CASE TEST SUITE")
-    print("="*80)
+    print("=" * 80)
 
     tests = [
         ("Single atom", test_edge_case_single_atom),
@@ -310,13 +340,14 @@ def main():
             print(f"\n❌ {name} FAILED with exception:")
             print(f"   {type(e).__name__}: {e}")
             import traceback
+
             traceback.print_exc()
             results.append((name, False))
 
     # Summary
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("EDGE CASE TEST SUMMARY")
-    print("="*80)
+    print("=" * 80)
 
     for name, passed in results:
         status = "✅ PASSED" if passed else "❌ FAILED"
@@ -325,14 +356,14 @@ def main():
     all_passed = all(passed for _, passed in results)
 
     if all_passed:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🎉 ALL EDGE CASES PASSED!")
-        print("="*80)
+        print("=" * 80)
         return 0
     else:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("⚠️  SOME EDGE CASES FAILED!")
-        print("="*80)
+        print("=" * 80)
         return 1
 
 

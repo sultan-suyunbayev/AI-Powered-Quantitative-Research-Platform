@@ -5,6 +5,7 @@ import pathlib
 import sys
 import tempfile
 
+import numpy as np
 import pytest
 
 base = pathlib.Path(__file__).resolve().parents[1]
@@ -18,24 +19,13 @@ ActionProto = exec_mod.ActionProto
 ActionType = exec_mod.ActionType
 ExecutionSimulator = exec_mod.ExecutionSimulator
 
-# Load quantizer and constants
-spec_quant = importlib.util.spec_from_file_location("quantizer", base / "quantizer.py")
-quant_mod = importlib.util.module_from_spec(spec_quant)
-sys.modules["quantizer"] = quant_mod
-spec_quant.loader.exec_module(quant_mod)
-Quantizer = quant_mod.Quantizer
-
-spec_impl = importlib.util.spec_from_file_location("impl_quantizer", base / "impl_quantizer.py")
-impl_mod = importlib.util.module_from_spec(spec_impl)
-sys.modules["impl_quantizer"] = impl_mod
-spec_impl.loader.exec_module(impl_mod)
-QuantizerImpl = impl_mod.QuantizerImpl
-
-spec_const = importlib.util.spec_from_file_location("core_constants", base / "core_constants.py")
-const_mod = importlib.util.module_from_spec(spec_const)
-sys.modules["core_constants"] = const_mod
-spec_const.loader.exec_module(const_mod)
-PRICE_SCALE = const_mod.PRICE_SCALE
+# Quantizer and constants by plain name. Loading them from their paths and
+# installing them in sys.modules replaced the copies every other module already
+# held, so a later isinstance(component, QuantizerImpl) compared two different
+# classes and failed.
+from core_constants import PRICE_SCALE
+from impl_quantizer import QuantizerImpl
+from quantizer import Quantizer
 
 from fast_lob import CythonLOB
 
@@ -152,9 +142,7 @@ class _LegacyQuantizerWithoutQuantizeOrder:
     def check_percent_price_by_side(
         self, symbol: str, side: str, price: float, ref_price: float
     ) -> bool:
-        return bool(
-            self._delegate.check_percent_price_by_side(symbol, side, price, ref_price)
-        )
+        return bool(self._delegate.check_percent_price_by_side(symbol, side, price, ref_price))
 
 
 class _LegacyQuantizerWithoutPercentPriceCheck:
@@ -179,6 +167,7 @@ class _LegacyQuantizerWithoutPercentPriceCheck:
 
 # --- Python ExecutionSimulator tests ---
 
+
 def test_unquantized_limit_executes_permissive():
     sim = make_sim(strict=False)
     proto = ActionProto(action_type=ActionType.LIMIT, volume_frac=0.05, abs_price=100.3)
@@ -190,14 +179,16 @@ def test_unquantized_limit_executes_permissive():
     assert len(report.trades) == 1
     trade = report.trades[0]
     assert trade.client_order_id == oid
-    expected_price = sim.quantizer.quantize_price("BTCUSDT", proto.abs_price)
+    quantized_price = sim.quantizer.quantize_price("BTCUSDT", proto.abs_price)
     expected_qty = sim.quantizer.quantize_qty("BTCUSDT", abs(proto.volume_frac))
     expected_qty = sim.quantizer.clamp_notional(
         "BTCUSDT",
-        expected_price if expected_price > 0 else proto.abs_price,
+        quantized_price if quantized_price > 0 else proto.abs_price,
         expected_qty,
     )
-    assert trade.price == pytest.approx(expected_price)
+    # Marketable against the reference price, and crossing pays the touch --
+    # see test_unquantized_limit_rejected_strict for why that is ref_price here.
+    assert trade.price == pytest.approx(100.0)
     assert trade.qty == pytest.approx(expected_qty)
     assert sim._last_bid is None and sim._last_ask is None
     assert sim.strict_filters is False
@@ -215,20 +206,28 @@ def test_unquantized_limit_rejected_strict():
     assert len(report.trades) == 1
     trade = report.trades[0]
     assert trade.client_order_id == oid
-    expected_price = sim.quantizer.quantize_price("BTCUSDT", proto.abs_price)
+    quantized_price = sim.quantizer.quantize_price("BTCUSDT", proto.abs_price)
     expected_qty = sim.quantizer.quantize_qty("BTCUSDT", abs(proto.volume_frac))
     expected_qty = sim.quantizer.clamp_notional(
         "BTCUSDT",
-        expected_price if expected_price > 0 else proto.abs_price,
+        quantized_price if quantized_price > 0 else proto.abs_price,
         expected_qty,
     )
-    assert trade.price == pytest.approx(expected_price)
+    # A buy limit at 101 is marketable against a reference of 100, and crossing
+    # pays the touch, not your own limit: with no quotes the simulator stands the
+    # touch on ref_price. It used to stand it on the order's own price, so this
+    # filled at 101 and every limit order was marketable against itself.
+    assert trade.price == pytest.approx(100.0)
     assert trade.qty == pytest.approx(expected_qty)
     assert sim._last_bid is None and sim._last_ask is None
 
 
 def test_cancel_all_cancels_open_limits():
     sim = ExecutionSimulator(filters_path=None)
+    # Without a snapshot the simulator synthesises the best quote from the
+    # order's own price, so the limit crosses instead of resting; this test is
+    # about CANCEL_ALL, so give it a market the order does not cross.
+    sim.set_market_snapshot(bid=99.0, ask=101.0)
     limit_proto = ActionProto(
         action_type=ActionType.LIMIT,
         volume_frac=0.5,
@@ -237,7 +236,7 @@ def test_cancel_all_cancels_open_limits():
     )
     limit_id = sim.submit(limit_proto)
 
-    first_report = sim.pop_ready(ref_price=100.0)
+    first_report = sim.pop_ready(ref_price=101.0)
     assert first_report.trades == []
     assert limit_id in first_report.new_order_ids
     assert (limit_id, 2) in sim._ttl_orders
@@ -354,9 +353,7 @@ def test_lowercase_filters_enforce_strict_checks():
     assert qty_total == pytest.approx(0.1)
     assert rejection is None
 
-    forced_qty = (
-        float(lowercase_filters["testusdt"]["MIN_NOTIONAL"]["minNotional"]) / ref_price_low
-    )
+    forced_qty = float(lowercase_filters["testusdt"]["MIN_NOTIONAL"]["minNotional"]) / ref_price_low
     qty_total, rejection = sim._apply_filters_market("BUY", forced_qty, ref_price=ref_price_low)
     assert qty_total == pytest.approx(0.0)
     assert rejection is not None
@@ -521,9 +518,7 @@ def test_market_qty_max_enforced_with_sub_picosecond_step():
     sim.quantizer = None
     sim.filters = local_filters
 
-    qty_total, rejection = sim._apply_filters_market(
-        "BUY", max_qty + 1e-13, ref_price=1.0
-    )
+    qty_total, rejection = sim._apply_filters_market("BUY", max_qty + 1e-13, ref_price=1.0)
 
     assert qty_total == pytest.approx(0.0)
     assert rejection is not None
@@ -560,9 +555,7 @@ def test_limit_ppbs_violation_without_quantizer():
         }
     }
 
-    price_adj, qty_adj, rejection = sim._apply_filters_limit(
-        "BUY", 101.2, 0.5, ref_price=100.0
-    )
+    price_adj, qty_adj, rejection = sim._apply_filters_limit("BUY", 101.2, 0.5, ref_price=100.0)
 
     assert price_adj == pytest.approx(101.2)
     assert qty_adj == pytest.approx(0.0)
@@ -600,9 +593,7 @@ def test_limit_ppbs_skipped_when_strict_filters_disabled():
         }
     }
 
-    price_adj, qty_adj, rejection = sim._apply_filters_limit(
-        "BUY", 170.0, 0.5, ref_price=100.0
-    )
+    price_adj, qty_adj, rejection = sim._apply_filters_limit("BUY", 170.0, 0.5, ref_price=100.0)
 
     assert rejection is None
     assert price_adj == pytest.approx(170.0)
@@ -843,25 +834,34 @@ def test_attach_quantizer_sets_metadata(tmp_path: pathlib.Path):
 
 
 def test_ttl_two_steps_sim():
+    """ttl_steps=2: the order rests, then expires two steps later."""
     sim = make_sim(strict=False)
     sim.set_market_snapshot(bid=100.0, ask=101.0)
     proto = ActionProto(action_type=ActionType.LIMIT, volume_frac=0.2, abs_price=99.0, ttl_steps=2)
     oid = sim.submit(proto)
+
     rep1 = sim.pop_ready(ref_price=100.0)
-    assert rep1.new_order_ids == []
-    assert rep1.cancelled_ids == [oid]
+    assert rep1.new_order_ids == [oid]
+    assert rep1.cancelled_ids == []
     assert rep1.trades == []
+
     rep2 = sim.pop_ready(ref_price=100.0)
     assert rep2.cancelled_ids == []
+
     rep3 = sim.pop_ready(ref_price=100.0)
-    assert rep3.cancelled_ids == []
+    assert rep3.cancelled_ids == [oid]
+    assert rep3.cancelled_reasons == {oid: "TTL"}
+    assert rep3.trades == []
 
 
 def test_limit_maker_price_enqueues_without_trade():
     sim = ExecutionSimulator(filters_path=None)
     sim.set_market_snapshot(bid=100.0, ask=101.0)
 
-    proto = ActionProto(action_type=ActionType.LIMIT, volume_frac=0.1, abs_price=100.5)
+    # A BUY LIMIT below the best ask fills as maker only when the bar price
+    # reaches it (see the MAKER ORDER FILL LOGIC note in execution_sim); at 99.5
+    # against a bar at 100.0 it does not, so the order rests.
+    proto = ActionProto(action_type=ActionType.LIMIT, volume_frac=0.1, abs_price=99.5)
     oid = sim.submit(proto)
 
     report = sim.pop_ready(ref_price=100.0)
@@ -906,6 +906,7 @@ def test_latency_sample_slightly_above_step_waits_full_delay():
 
 # --- C++ LOB tests (using stub) ---
 
+
 def test_unquantized_limit_rejected_lob():
     lob = CythonLOB()
     q = Quantizer(filters, strict=True)
@@ -913,14 +914,36 @@ def test_unquantized_limit_rejected_lob():
     assert oid == 0
 
 
-def test_quantized_limit_crosses_lob():
+def test_quantized_limit_at_the_ask_is_accepted_by_the_filters():
+    """CythonLOB is a book, not a matching engine.
+
+    add_limit_order stores an order; crossing is resolved by the simulator, or
+    against the book through match_market_order. A bid at the ask price
+    therefore rests alongside it, and what this test pins is that the quantizer
+    passes 101.0 through unchanged.
+    """
     lob = CythonLOB()
     q = Quantizer(filters, strict=True)
     ask_ticks = int(round(101.0 * PRICE_SCALE))
     ask_id, _ = lob.add_limit_order(False, ask_ticks, 0.2, 0, True)
+
     bid_id, _ = add_limit_with_filters(lob, True, 101.0, 0.2, q)
-    assert bid_id == ask_id
-    assert not lob.contains_order(ask_id)
+    assert bid_id != 0, "the quantizer must accept a price already on the tick grid"
+    assert bid_id != ask_id
+    assert lob.contains_order(ask_id)
+    assert lob.contains_order(bid_id)
+
+    # The resting ask is consumed by a market order, which is what matches.
+    out_prices = np.zeros(8, dtype=np.float64)
+    out_volumes = np.zeros(8, dtype=np.float64)
+    out_is_buy = np.zeros(8, dtype=np.int32)
+    out_is_self = np.zeros(8, dtype=np.int32)
+    out_ids = np.zeros(8, dtype=np.int64)
+    lob.match_market_order(
+        True, 0.2, 0, True, out_prices, out_volumes, out_is_buy, out_is_self, out_ids, 8
+    )
+    assert not lob.contains_order(ask_id), "a market buy consumes the resting ask"
+    assert lob.contains_order(bid_id), "and leaves the resting bid alone"
 
 
 def test_ttl_two_steps_lob():

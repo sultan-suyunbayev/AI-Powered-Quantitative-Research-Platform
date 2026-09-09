@@ -6,8 +6,19 @@ from types import ModuleType, SimpleNamespace
 
 import yaml
 
-# Provide a lightweight ``requests`` stub if the dependency is absent.
-if "requests" not in sys.modules:  # pragma: no cover - test environment helper
+# Provide a lightweight ``requests`` stub only if the dependency is genuinely
+# absent. Testing ``"requests" not in sys.modules`` instead asks whether anything
+# has imported it *yet*, which is true whenever this module is collected early --
+# and the stub then stands in for the real library for the rest of the worker.
+try:  # pragma: no cover - requests is pinned in every supported install
+    import requests as _requests  # noqa: F401
+
+    _REQUESTS_AVAILABLE = True
+except ModuleNotFoundError:  # pragma: no cover - test environment helper
+    _REQUESTS_AVAILABLE = False
+
+if not _REQUESTS_AVAILABLE:  # pragma: no cover - test environment helper
+
     class _DummyResponse:
         def __init__(self, payload):
             self._payload = payload
@@ -21,19 +32,19 @@ if "requests" not in sys.modules:  # pragma: no cover - test environment helper
     class _DummyRequests(ModuleType):
         def get(self, url, params=None, timeout=0):  # pragma: no cover - simple stub
             if "ticker/24hr" in url:
-                return _DummyResponse([
-                    {"symbol": "BTCUSDT", "quoteVolume": 1_000_000}
-                ])
-            return _DummyResponse({
-                "symbols": [
-                    {
-                        "symbol": "BTCUSDT",
-                        "status": "TRADING",
-                        "quoteAsset": "USDT",
-                        "permissions": ["SPOT"],
-                    }
-                ]
-            })
+                return _DummyResponse([{"symbol": "BTCUSDT", "quoteVolume": 1_000_000}])
+            return _DummyResponse(
+                {
+                    "symbols": [
+                        {
+                            "symbol": "BTCUSDT",
+                            "status": "TRADING",
+                            "quoteAsset": "USDT",
+                            "permissions": ["SPOT"],
+                        }
+                    ]
+                }
+            )
 
     sys.modules["requests"] = _DummyRequests("requests")
 
@@ -46,11 +57,11 @@ from quantizer import Quantizer
 
 def _components_stub() -> Components:
     data = {
-        "market_data": {"target": "tests.di_stubs:DummyMarketData", "params": {}},
-        "executor": {"target": "tests.di_stubs:DummyExecutor", "params": {}},
-        "feature_pipe": {"target": "tests.di_stubs:DummyFeaturePipe", "params": {}},
-        "policy": {"target": "tests.di_stubs:DummyPolicy", "params": {}},
-        "risk_guards": {"target": "tests.di_stubs:DummyRiskGuards", "params": {}},
+        "market_data": {"target": "di_stubs:DummyMarketData", "params": {}},
+        "executor": {"target": "di_stubs:DummyExecutor", "params": {}},
+        "feature_pipe": {"target": "di_stubs:DummyFeaturePipe", "params": {}},
+        "policy": {"target": "di_stubs:DummyPolicy", "params": {}},
+        "risk_guards": {"target": "di_stubs:DummyRiskGuards", "params": {}},
     }
     return Components.parse_obj(data)
 
@@ -63,11 +74,11 @@ def test_load_config_preserves_quantizer_section(tmp_path):
         "api": {"api_key": "k", "api_secret": "s", "testnet": True},
         "data": {"symbols": ["BTCUSDT"], "timeframe": "1m"},
         "components": {
-            "market_data": {"target": "tests.di_stubs:DummyMarketData"},
-            "executor": {"target": "tests.di_stubs:DummyExecutor"},
-            "feature_pipe": {"target": "tests.di_stubs:DummyFeaturePipe"},
-            "policy": {"target": "tests.di_stubs:DummyPolicy"},
-            "risk_guards": {"target": "tests.di_stubs:DummyRiskGuards"},
+            "market_data": {"target": "di_stubs:DummyMarketData"},
+            "executor": {"target": "di_stubs:DummyExecutor"},
+            "feature_pipe": {"target": "di_stubs:DummyFeaturePipe"},
+            "policy": {"target": "di_stubs:DummyPolicy"},
+            "risk_guards": {"target": "di_stubs:DummyRiskGuards"},
         },
         "quantizer": {
             "path": str(filters_path),
@@ -85,7 +96,7 @@ def test_load_config_preserves_quantizer_section(tmp_path):
 
 def test_build_graph_provides_quantizer_instance(tmp_path):
     filters_path = tmp_path / "filters.json"
-    filters_path.write_text("{\"filters\": {}}", encoding="utf-8")
+    filters_path.write_text('{"filters": {}}', encoding="utf-8")
     components = _components_stub()
     run_cfg = SimpleNamespace(quantizer={"path": str(filters_path)}, retry=RetryConfig())
 
@@ -102,7 +113,7 @@ def test_quantizer_warnings_are_logged(monkeypatch, caplog, tmp_path):
     import impl_quantizer
 
     filters_path = tmp_path / "filters.json"
-    filters_path.write_text("{\"filters\": {}}", encoding="utf-8")
+    filters_path.write_text('{"filters": {}}', encoding="utf-8")
 
     def _fake_load_filters(path, max_age_days=0, fatal=False):
         import warnings
@@ -128,7 +139,7 @@ def test_quantizer_refresh_is_debounced(monkeypatch, tmp_path):
     QuantizerImpl._REFRESH_GUARD.clear()
 
     filters_path = tmp_path / "filters.json"
-    filters_path.write_text("{\"filters\": {}}", encoding="utf-8")
+    filters_path.write_text('{"filters": {}}', encoding="utf-8")
 
     def _fake_load_filters(path, max_age_days=0, fatal=False):
         return {}, {}
@@ -141,7 +152,8 @@ def test_quantizer_refresh_is_debounced(monkeypatch, tmp_path):
             self.stdout = ""
             self.stderr = ""
 
-    def _fake_run(cmd, capture_output=True, text=True):  # pragma: no cover - simple stub
+    # **kwargs so the stub keeps matching when the caller passes a timeout
+    def _fake_run(cmd, capture_output=True, text=True, **kwargs):  # pragma: no cover - simple stub
         run_calls.append(list(cmd))
         return _DummyCompletedProcess()
 

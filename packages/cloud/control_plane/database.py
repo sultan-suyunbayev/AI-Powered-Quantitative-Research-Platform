@@ -43,9 +43,12 @@ from sqlalchemy.pool import NullPool, QueuePool
 # NOTE: asyncpg is required for PostgreSQL. Install with: pip install asyncpg
 # NOTE: aiosqlite is required for SQLite async. Install with: pip install aiosqlite
 _DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./ccea_control_plane.db"
-_PROD_DATABASE_URL_EXAMPLE = "postgresql+asyncpg://postgres:postgres@localhost:5432/ccea_control_plane"
+_PROD_DATABASE_URL_EXAMPLE = (
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/ccea_control_plane"
+)
 
 DATABASE_URL = os.getenv("CCEA_DATABASE_URL", _DEFAULT_DATABASE_URL)
+
 
 # Validate database URL at import time
 def _validate_database_url(url: str) -> None:
@@ -67,6 +70,7 @@ def _validate_database_url(url: str) -> None:
                 "aiosqlite is required for SQLite async connections. "
                 "Install with: pip install aiosqlite"
             ) from e
+
 
 # Validate on import (fail fast)
 _validate_database_url(DATABASE_URL)
@@ -109,7 +113,12 @@ def create_engine(
         - For SQLite, connection pooling is disabled (StaticPool used instead)
         - For PostgreSQL, QueuePool is used in production, NullPool in test mode
     """
-    db_url = url or DATABASE_URL
+    # Read the environment when the engine is built, not when this module was
+    # first imported. A caller that sets CCEA_DATABASE_URL afterwards -- the
+    # desktop supervisor does exactly that, then seeds the database it named --
+    # would otherwise get an engine pointed at the default file, and the tables
+    # would be created somewhere other than where the seed goes.
+    db_url = url or os.getenv("CCEA_DATABASE_URL") or DATABASE_URL
 
     # Validate the URL before creating engine
     _validate_database_url(db_url)
@@ -220,13 +229,15 @@ class TenantContext:
         Args:
             session: Database session
         """
-        if self.workspace_id is not None:
-            await session.execute(
-                text(f"SET app.current_workspace_id = '{self.workspace_id}'")
-            )
-        else:
-            # Reset to empty string for superuser/admin operations
-            await session.execute(text("SET app.current_workspace_id = ''"))
+        # set_config() takes a bind parameter; `SET` does not, and interpolating the
+        # workspace id into the statement put the tenant-isolation key into raw SQL.
+        # The RLS policies read it through current_setting(), which set_config() feeds
+        # identically, and `false` keeps it session-scoped exactly as `SET` was.
+        value = str(self.workspace_id) if self.workspace_id is not None else ""
+        await session.execute(
+            text("SELECT set_config('app.current_workspace_id', :workspace_id, false)"),
+            {"workspace_id": value},
+        )
 
 
 @asynccontextmanager
@@ -408,9 +419,7 @@ async def check_migration_status() -> dict:
 
     # Production readiness check: PostgreSQL + Alembic migrations
     result["production_ready"] = (
-        is_postgresql
-        and result["has_alembic_table"]
-        and result["current_revision"] is not None
+        is_postgresql and result["has_alembic_table"] and result["current_revision"] is not None
     )
 
     return result

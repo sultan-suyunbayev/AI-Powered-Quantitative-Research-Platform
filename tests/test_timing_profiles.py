@@ -39,10 +39,10 @@ def _make_minimal_df(rows: int = 5, timeframe_ms: int = 60_000) -> pd.DataFrame:
 def test_execution_profile_switch_changes_env_behavior():
     timing_defaults, timing_profiles = load_timing_profiles()
     mkt_timing = resolve_execution_timing(
-        ExecutionProfile.MKT_OPEN_NEXT_H1, timing_defaults, timing_profiles
+        ExecutionProfile.MKT_OPEN_NEXT_4H, timing_defaults, timing_profiles
     )
     vwap_timing = resolve_execution_timing(
-        ExecutionProfile.VWAP_CURRENT_H1, timing_defaults, timing_profiles
+        ExecutionProfile.VWAP_CURRENT_4H, timing_defaults, timing_profiles
     )
 
     df = _make_minimal_df()
@@ -84,7 +84,7 @@ def test_execution_profile_switch_changes_env_behavior():
 def test_mkt_open_profile_alignment(monkeypatch: pytest.MonkeyPatch) -> None:
     timing_defaults, timing_profiles = load_timing_profiles()
     resolved = resolve_execution_timing(
-        ExecutionProfile.MKT_OPEN_NEXT_H1, timing_defaults, timing_profiles
+        ExecutionProfile.MKT_OPEN_NEXT_4H, timing_defaults, timing_profiles
     )
     timeframe_ms = timing_defaults.timeframe_ms or 60_000
 
@@ -154,9 +154,7 @@ def test_mkt_open_profile_alignment(monkeypatch: pytest.MonkeyPatch) -> None:
         "pipeline_stage_drop_count",
     ):
         monkeypatch.setattr(service_signal_runner, attr, dummy_metric)
-    monkeypatch.setattr(
-        service_signal_runner.monitoring, "inc_stage", lambda *args, **kwargs: None
-    )
+    monkeypatch.setattr(service_signal_runner.monitoring, "inc_stage", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         service_signal_runner.monitoring, "inc_reason", lambda *args, **kwargs: None
     )
@@ -177,9 +175,7 @@ def test_mkt_open_profile_alignment(monkeypatch: pytest.MonkeyPatch) -> None:
         "throttle_queue_expired_count",
     ):
         monkeypatch.setattr(service_signal_runner.monitoring, attr, dummy_metric)
-    monkeypatch.setattr(
-        service_signal_runner.monitoring, "kill_switch_triggered", lambda: False
-    )
+    monkeypatch.setattr(service_signal_runner.monitoring, "kill_switch_triggered", lambda: False)
     monkeypatch.setattr(
         service_signal_runner.monitoring, "alert_zero_signals", lambda *a, **k: None
     )
@@ -206,7 +202,9 @@ def test_mkt_open_profile_alignment(monkeypatch: pytest.MonkeyPatch) -> None:
 
     captured_publish: list[int] = []
 
-    def _publish(self, order, symbol: str, bar_close_ms: int, *, stage_cfg=None):
+    # publish_decision(order, symbol, bar_open_ms, *, bar_close_ms=..., stage_cfg=...):
+    # the third argument is the bar OPEN; this test measures the close.
+    def _publish(self, order, symbol: str, bar_open_ms: int, *, bar_close_ms=None, stage_cfg=None):
         captured_publish.append(int(bar_close_ms))
         return PipelineResult(action="pass", stage=Stage.PUBLISH, decision=order)
 
@@ -243,5 +241,6 @@ def test_mkt_open_profile_alignment(monkeypatch: pytest.MonkeyPatch) -> None:
     assert guard_call["lag_ms"] == resolved.decision_delay_ms
     assert guard_call["now_ms"] == decision_ts
     assert captured_publish == [int(bar.ts)]
-    assert recorded_dedup == [int(bar.ts) + timeframe_ms]
+    # Bar.ts is the bar CLOSE, so the dedup key is that timestamp itself.
+    assert recorded_dedup == [int(bar.ts)]
     assert int(bar.ts) + resolved.decision_delay_ms == decision_ts

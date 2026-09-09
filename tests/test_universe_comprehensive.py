@@ -43,9 +43,7 @@ class TestThrottledGet:
 
         _throttled_get("http://example.com/api", params={"key": "value"})
         mock_get.assert_called_once_with(
-            "http://example.com/api",
-            params={"key": "value"},
-            timeout=20
+            "http://example.com/api", params={"key": "value"}, timeout=20
         )
 
     @patch("requests.get")
@@ -72,7 +70,7 @@ class TestThrottledGet:
         mock_get.side_effect = [
             Exception("Network error"),
             Exception("Network error"),
-            Mock(status_code=200)  # Success on third attempt
+            Mock(status_code=200),  # Success on third attempt
         ]
 
         # Should succeed after retries
@@ -184,7 +182,7 @@ class TestRunFunction:
 
             # Verify file saved
             assert os.path.exists(out_path)
-            with open(out_path, "r") as f:
+            with open(out_path, "r", encoding="utf-8") as f:
                 saved = json.load(f)
             assert saved == symbols
 
@@ -289,8 +287,18 @@ class TestRunFunction:
         """Test run() filters by liquidity threshold."""
         exchange_info = {
             "symbols": [
-                {"symbol": "BTCUSDT", "status": "TRADING", "quoteAsset": "USDT", "permissions": ["SPOT"]},
-                {"symbol": "LOWLIQ", "status": "TRADING", "quoteAsset": "USDT", "permissions": ["SPOT"]},
+                {
+                    "symbol": "BTCUSDT",
+                    "status": "TRADING",
+                    "quoteAsset": "USDT",
+                    "permissions": ["SPOT"],
+                },
+                {
+                    "symbol": "LOWLIQ",
+                    "status": "TRADING",
+                    "quoteAsset": "USDT",
+                    "permissions": ["SPOT"],
+                },
             ]
         }
 
@@ -317,9 +325,24 @@ class TestRunFunction:
         """Test run() returns sorted symbols."""
         exchange_info = {
             "symbols": [
-                {"symbol": "ZZUSDT", "status": "TRADING", "quoteAsset": "USDT", "permissions": ["SPOT"]},
-                {"symbol": "AAUSDT", "status": "TRADING", "quoteAsset": "USDT", "permissions": ["SPOT"]},
-                {"symbol": "MMUSDT", "status": "TRADING", "quoteAsset": "USDT", "permissions": ["SPOT"]},
+                {
+                    "symbol": "ZZUSDT",
+                    "status": "TRADING",
+                    "quoteAsset": "USDT",
+                    "permissions": ["SPOT"],
+                },
+                {
+                    "symbol": "AAUSDT",
+                    "status": "TRADING",
+                    "quoteAsset": "USDT",
+                    "permissions": ["SPOT"],
+                },
+                {
+                    "symbol": "MMUSDT",
+                    "status": "TRADING",
+                    "quoteAsset": "USDT",
+                    "permissions": ["SPOT"],
+                },
             ]
         }
 
@@ -402,32 +425,45 @@ class TestGetSymbolsFunction:
 
     @patch("services.universe.run")
     def test_get_symbols_creates_missing_file(self, mock_run):
-        """Test get_symbols creates file if missing."""
-        mock_run.return_value = ["BTCUSDT"]
+        """get_symbols refreshes through run() when the cache is missing.
+
+        run() is what writes the file, so the stub has to write it too --
+        otherwise get_symbols opens a path nothing created.
+        """
 
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_path = os.path.join(tmpdir, "symbols.json")
 
+            def _write_cache(out, **_kwargs):
+                with open(out, "w", encoding="utf-8") as fh:
+                    json.dump(["BTCUSDT"], fh)
+                return ["BTCUSDT"]
+
+            mock_run.side_effect = _write_cache
+
             symbols = get_symbols(out=cache_path)
 
-            # Should call run() for missing file
             mock_run.assert_called_once()
             assert os.path.exists(cache_path)
+            assert symbols == ["BTCUSDT"]
 
     def test_get_symbols_with_liquidity_threshold(self):
         """Test get_symbols passes liquidity_threshold to run()."""
         with patch("services.universe.run") as mock_run:
-            mock_run.return_value = ["BTCUSDT"]
-
             with tempfile.TemporaryDirectory() as tmpdir:
                 cache_path = os.path.join(tmpdir, "symbols.json")
 
+                # run() is what writes the cache; get_symbols reads it afterwards.
+                def _write_cache(out, **_kwargs):
+                    with open(out, "w", encoding="utf-8") as fh:
+                        json.dump(["BTCUSDT"], fh)
+                    return ["BTCUSDT"]
+
+                mock_run.side_effect = _write_cache
+
                 get_symbols(out=cache_path, liquidity_threshold=1000000.0)
 
-                mock_run.assert_called_once_with(
-                    cache_path,
-                    liquidity_threshold=1000000.0
-                )
+                mock_run.assert_called_once_with(cache_path, liquidity_threshold=1000000.0)
 
 
 class TestIntegration:
@@ -438,8 +474,18 @@ class TestIntegration:
         """Test complete workflow without liquidity filter."""
         exchange_info = {
             "symbols": [
-                {"symbol": "BTCUSDT", "status": "TRADING", "quoteAsset": "USDT", "permissions": ["SPOT"]},
-                {"symbol": "ETHUSDT", "status": "TRADING", "quoteAsset": "USDT", "permissions": ["SPOT"]},
+                {
+                    "symbol": "BTCUSDT",
+                    "status": "TRADING",
+                    "quoteAsset": "USDT",
+                    "permissions": ["SPOT"],
+                },
+                {
+                    "symbol": "ETHUSDT",
+                    "status": "TRADING",
+                    "quoteAsset": "USDT",
+                    "permissions": ["SPOT"],
+                },
             ]
         }
 
@@ -465,8 +511,18 @@ class TestIntegration:
         """Test complete workflow with liquidity filter."""
         exchange_info = {
             "symbols": [
-                {"symbol": "BTCUSDT", "status": "TRADING", "quoteAsset": "USDT", "permissions": ["SPOT"]},
-                {"symbol": "LOWLIQ", "status": "TRADING", "quoteAsset": "USDT", "permissions": ["SPOT"]},
+                {
+                    "symbol": "BTCUSDT",
+                    "status": "TRADING",
+                    "quoteAsset": "USDT",
+                    "permissions": ["SPOT"],
+                },
+                {
+                    "symbol": "LOWLIQ",
+                    "status": "TRADING",
+                    "quoteAsset": "USDT",
+                    "permissions": ["SPOT"],
+                },
             ]
         }
 
@@ -528,7 +584,12 @@ class TestEdgeCases:
         exchange_info = {
             "symbols": [
                 {"symbol": "BTCUSDT", "status": "TRADING"},  # Missing quoteAsset and permissions
-                {"symbol": "ETHUSDT", "status": "TRADING", "quoteAsset": "USDT", "permissions": ["SPOT"]},
+                {
+                    "symbol": "ETHUSDT",
+                    "status": "TRADING",
+                    "quoteAsset": "USDT",
+                    "permissions": ["SPOT"],
+                },
             ]
         }
 

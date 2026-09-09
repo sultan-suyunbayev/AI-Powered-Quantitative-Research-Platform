@@ -14,13 +14,11 @@ from pathlib import Path
 def test_objective_function_validation_check():
     """Verify that objective function has validation data check."""
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     # Find the objective function
     objective_match = re.search(
-        r'def objective\(.*?\):\s*\n(.*?)(?=\ndef\s|\nclass\s|\Z)',
-        content,
-        re.DOTALL
+        r"def objective\(.*?\):\s*\n(.*?)(?=\ndef\s|\nclass\s|\Z)", content, re.DOTALL
     )
 
     if not objective_match:
@@ -30,11 +28,11 @@ def test_objective_function_validation_check():
     objective_code = objective_match.group(1)
 
     # Check for validation data requirement
-    if 'if not val_data_by_token:' not in objective_code:
+    if "if not val_data_by_token:" not in objective_code:
         print("❌ FAIL: Missing validation data check")
         return False
 
-    if 'Validation data is required' not in objective_code:
+    if "Validation data is required" not in objective_code:
         print("❌ FAIL: Missing validation error message")
         return False
 
@@ -45,11 +43,11 @@ def test_objective_function_validation_check():
 def test_objective_uses_val_data_not_test():
     """Verify that objective function uses val_data, not test_data."""
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     # Find the evaluation phase data assignment in objective function
     # It should be around line 3970-3980
-    pattern = r'eval_phase_data\s*=\s*([^\n]+)'
+    pattern = r"eval_phase_data\s*=\s*([^\n]+)"
     matches = re.findall(pattern, content)
 
     found_correct_assignment = False
@@ -57,12 +55,12 @@ def test_objective_uses_val_data_not_test():
 
     for match in matches:
         # Correct: eval_phase_data = val_data_by_token
-        if match.strip() == 'val_data_by_token':
+        if match.strip() == "val_data_by_token":
             found_correct_assignment = True
             print(f"✓ Found correct assignment: eval_phase_data = {match.strip()}")
 
         # Incorrect: eval_phase_data = test_data_by_token if test_data_by_token else val_data_by_token
-        elif 'test_data_by_token if test_data_by_token' in match:
+        elif "test_data_by_token if test_data_by_token" in match:
             found_incorrect_assignment = True
             print(f"❌ Found incorrect assignment: eval_phase_data = {match.strip()}")
 
@@ -81,13 +79,13 @@ def test_objective_uses_val_data_not_test():
 def test_eval_phase_name_is_val():
     """Verify that eval_phase_name is set to 'val' in objective function."""
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     # Look for eval_phase_name assignment in objective function
     # Should be: eval_phase_name = "val"
     # NOT: eval_phase_name = "test" if test_data_by_token else "val"
 
-    pattern = r'eval_phase_name\s*=\s*([^\n]+)'
+    pattern = r"eval_phase_name\s*=\s*([^\n]+)"
     matches = re.findall(pattern, content)
 
     found_correct = False
@@ -114,7 +112,7 @@ def test_eval_phase_name_is_val():
 def test_has_critical_comments():
     """Verify that critical comments about data leakage are present."""
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     required_keywords = [
         ("CRITICAL", "Critical warning keyword"),
@@ -144,14 +142,16 @@ def test_final_eval_uses_test_data():
     This is the ONLY place where test data should be used.
     """
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     # Look for the final evaluation section (after HPO)
     # Should have: final_eval_data = test_data_by_token if test_data_by_token else val_data_by_token
     # This is CORRECT behavior for post-HPO evaluation
 
-    if 'Final evaluation of the best model on test set' in content or \
-       'FINAL INDEPENDENT EVALUATION ON TEST SET' in content:
+    if (
+        "Final evaluation of the best model on test set" in content
+        or "FINAL INDEPENDENT EVALUATION ON TEST SET" in content
+    ):
         print("✓ Found final evaluation section with correct documentation")
         return True
     else:
@@ -162,10 +162,10 @@ def test_final_eval_uses_test_data():
 def test_val_stats_path_naming():
     """Verify that validation stats are saved with 'val' naming, not 'test'."""
     train_file = Path("train_model_multi_patch.py")
-    content = train_file.read_text()
+    content = train_file.read_text(encoding="utf-8")
 
     # In the objective function, should use val_stats_path, not test_stats_path
-    if 'val_stats_path' in content:
+    if "val_stats_path" in content:
         print("✓ Found val_stats_path (correct naming)")
         result = True
     else:
@@ -179,9 +179,9 @@ def test_val_stats_path_naming():
 
 def run_all_tests():
     """Run all smoke tests."""
-    print("="*80)
+    print("=" * 80)
     print("HPO DATA LEAKAGE FIX - SMOKE TESTS")
-    print("="*80)
+    print("=" * 80)
     print()
 
     tests = [
@@ -205,9 +205,9 @@ def run_all_tests():
             print(f"❌ ERROR: {e}")
             results.append((name, False))
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("SUMMARY")
-    print("="*80)
+    print("=" * 80)
 
     passed = sum(1 for _, result in results if result)
     total = len(results)

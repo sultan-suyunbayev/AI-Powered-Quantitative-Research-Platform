@@ -10,12 +10,12 @@ def test_kill_switch_counters_persisted(tmp_path):
     kill_switch_counters.update({"rest": 1, "ws": 2})
     save(store, ops)
 
-    data = json.loads(ops.read_text())
+    data = json.loads(ops.read_text(encoding="utf-8"))
     assert data["counters"] == {"rest": 1, "ws": 2}
 
     kill_switch_counters.clear()
     load(store, ops)
     assert kill_switch_counters == {"rest": 1, "ws": 2}
 
-    main_data = json.loads(store.read_text())
+    main_data = json.loads(store.read_text(encoding="utf-8"))
     assert "kill_switch_counters" not in main_data

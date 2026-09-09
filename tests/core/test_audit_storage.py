@@ -48,6 +48,7 @@ from services.core.risk_controls.audit_storage import (
 # Test Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def sample_record():
     """Create a sample audit record for testing."""
@@ -125,6 +126,7 @@ def file_storage(tmp_path):
 # Config Tests
 # =============================================================================
 
+
 class TestAuditStorageConfig:
     """Tests for AuditStorageConfig."""
 
@@ -170,6 +172,7 @@ class TestStorageMetrics:
 # MemoryAuditStorage Tests
 # =============================================================================
 
+
 class TestMemoryAuditStorage:
     """Tests for MemoryAuditStorage."""
 
@@ -195,8 +198,14 @@ class TestMemoryAuditStorage:
 
         # Verify chain
         assert memory_storage._records[0].previous_record_hash is None
-        assert memory_storage._records[1].previous_record_hash == memory_storage._records[0].record_hash
-        assert memory_storage._records[2].previous_record_hash == memory_storage._records[1].record_hash
+        assert (
+            memory_storage._records[1].previous_record_hash
+            == memory_storage._records[0].record_hash
+        )
+        assert (
+            memory_storage._records[2].previous_record_hash
+            == memory_storage._records[1].record_hash
+        )
 
     def test_append_batch(self, memory_storage, sample_records):
         """Test batch append."""
@@ -224,8 +233,8 @@ class TestMemoryAuditStorage:
         for record in sample_records:
             memory_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         results = memory_storage.read_range(start, end)
 
@@ -252,12 +261,13 @@ class TestMemoryAuditStorage:
         memory_storage.append(submitted)
         memory_storage.append(filled)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         # Filter by event type
         results = memory_storage.read_range(
-            start, end,
+            start,
+            end,
             event_types=[AuditEventType.ORDER_SUBMITTED],
         )
 
@@ -269,8 +279,8 @@ class TestMemoryAuditStorage:
         for record in sample_records:
             memory_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         # First page
         page1 = memory_storage.read_range(start, end, limit=5, offset=0)
@@ -304,8 +314,8 @@ class TestMemoryAuditStorage:
         for record in sample_records:
             memory_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         results = memory_storage.read_by_algorithm_id("algo-001", start, end)
         assert len(results) == len(sample_records)
@@ -323,8 +333,8 @@ class TestMemoryAuditStorage:
         for record in sample_records:
             memory_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         count = memory_storage.count(start_time=start, end_time=end)
         assert count == len(sample_records)
@@ -374,8 +384,8 @@ class TestMemoryAuditStorage:
         for record in sample_records:
             memory_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         status = memory_storage.verify_chain(start, end)
 
@@ -387,8 +397,8 @@ class TestMemoryAuditStorage:
             memory_storage.append(record)
 
         request = AuditExportRequest(
-            start_datetime=datetime.now() - timedelta(hours=1),
-            end_datetime=datetime.now() + timedelta(hours=1),
+            start_datetime=datetime.utcnow() - timedelta(hours=1),
+            end_datetime=datetime.utcnow() + timedelta(hours=1),
             include_chain_verification=True,
         )
 
@@ -404,8 +414,8 @@ class TestMemoryAuditStorage:
             memory_storage.append(record)
 
         request = AuditExportRequest(
-            start_datetime=datetime.now() - timedelta(hours=1),
-            end_datetime=datetime.now() + timedelta(hours=1),
+            start_datetime=datetime.utcnow() - timedelta(hours=1),
+            end_datetime=datetime.utcnow() + timedelta(hours=1),
             event_types=[AuditEventType.ORDER_SUBMITTED],
             order_ids=["order-001"],
         )
@@ -441,6 +451,7 @@ class TestMemoryAuditStorage:
 # =============================================================================
 # SQLiteAuditStorage Tests
 # =============================================================================
+
 
 class TestSQLiteAuditStorage:
     """Tests for SQLiteAuditStorage."""
@@ -492,8 +503,8 @@ class TestSQLiteAuditStorage:
         for record in sample_records:
             sqlite_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         results = sqlite_storage.read_range(start, end)
 
@@ -536,8 +547,8 @@ class TestSQLiteAuditStorage:
         sqlite_storage.config.backup_path = str(tmp_path / "exports")
 
         request = AuditExportRequest(
-            start_datetime=datetime.now() - timedelta(hours=1),
-            end_datetime=datetime.now() + timedelta(hours=1),
+            start_datetime=datetime.utcnow() - timedelta(hours=1),
+            end_datetime=datetime.utcnow() + timedelta(hours=1),
             include_chain_verification=True,
         )
 
@@ -559,6 +570,7 @@ class TestSQLiteAuditStorage:
 # =============================================================================
 # FileAuditStorage Tests
 # =============================================================================
+
 
 class TestFileAuditStorage:
     """Tests for FileAuditStorage."""
@@ -599,8 +611,8 @@ class TestFileAuditStorage:
         for record in sample_records:
             file_storage.append(record)
 
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
 
         results = file_storage.read_range(start, end)
 
@@ -631,8 +643,8 @@ class TestFileAuditStorage:
             file_storage.append(record)
 
         request = AuditExportRequest(
-            start_datetime=datetime.now() - timedelta(hours=1),
-            end_datetime=datetime.now() + timedelta(hours=1),
+            start_datetime=datetime.utcnow() - timedelta(hours=1),
+            end_datetime=datetime.utcnow() + timedelta(hours=1),
             include_chain_verification=True,
         )
 
@@ -645,7 +657,7 @@ class TestFileAuditStorage:
         """Test that records are stored as JSON Lines."""
         file_storage.append(sample_record)
 
-        with open(file_storage._file_path, "r") as f:
+        with open(file_storage._file_path, "r", encoding="utf-8") as f:
             line = f.readline()
             data = json.loads(line)
             assert data["record_id"] == sample_record.record_id
@@ -654,6 +666,7 @@ class TestFileAuditStorage:
 # =============================================================================
 # Factory Function Tests
 # =============================================================================
+
 
 class TestCreateAuditStorage:
     """Tests for create_audit_storage factory function."""
@@ -706,10 +719,13 @@ class TestCreateAuditStorage:
 # Chain Integrity Tests
 # =============================================================================
 
+
 class TestChainIntegrity:
     """Tests for chain integrity across storage backends."""
 
-    @pytest.mark.parametrize("storage_fixture", ["memory_storage", "sqlite_storage", "file_storage"])
+    @pytest.mark.parametrize(
+        "storage_fixture", ["memory_storage", "sqlite_storage", "file_storage"]
+    )
     def test_chain_integrity_maintained(self, storage_fixture, sample_records, request):
         """Test that chain integrity is maintained."""
         storage = request.getfixturevalue(storage_fixture)
@@ -718,8 +734,8 @@ class TestChainIntegrity:
             storage.append(record)
 
         # Read all records
-        start = datetime.now() - timedelta(hours=1)
-        end = datetime.now() + timedelta(hours=1)
+        start = datetime.utcnow() - timedelta(hours=1)
+        end = datetime.utcnow() + timedelta(hours=1)
         records = storage.read_range(start, end)
 
         # Verify chain
@@ -728,7 +744,9 @@ class TestChainIntegrity:
             assert record.previous_record_hash == prev_hash
             prev_hash = record.record_hash
 
-    @pytest.mark.parametrize("storage_fixture", ["memory_storage", "sqlite_storage", "file_storage"])
+    @pytest.mark.parametrize(
+        "storage_fixture", ["memory_storage", "sqlite_storage", "file_storage"]
+    )
     def test_verify_chain_detects_tampering(self, storage_fixture, sample_records, request):
         """Test that chain verification detects tampering."""
         storage = request.getfixturevalue(storage_fixture)
@@ -744,6 +762,7 @@ class TestChainIntegrity:
 # =============================================================================
 # Metrics Tests
 # =============================================================================
+
 
 class TestStorageMetricsTracking:
     """Tests for metrics tracking across storage backends."""
