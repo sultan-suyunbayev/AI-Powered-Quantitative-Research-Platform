@@ -332,7 +332,13 @@ class TestVGSUPGDNoiseInteraction:
         """
 
         def train_model(adaptive_noise: bool, num_steps: int = 50) -> List[float]:
-            """Train model and return list of losses."""
+            """Train model and return list of losses.
+
+            Seeded per arm: the two runs have to start from the same weights and
+            see the same data, or the comparison below is between two different
+            problems rather than between two noise settings.
+            """
+            torch.manual_seed(0)
             model = SimpleTestModel()
             optimizer = AdaptiveUPGD(
                 model.parameters(), lr=1e-4, sigma=0.001, adaptive_noise=adaptive_noise
