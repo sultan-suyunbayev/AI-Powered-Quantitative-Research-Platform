@@ -353,7 +353,10 @@ def test_status_shape_and_journal_order(tmp_path):
     assert status["jobs"][0]["id"] == "daily_job"
     for key in ("enabled", "trigger", "last_status", "next_run_ts", "trading_impacting"):
         assert key in status["jobs"][0]
-    runs = svc.recent_runs()
+    # wait_runs, not recent_runs: the job status lives in memory and the journal
+    # on disk, and they are written a moment apart -- reading the file straight
+    # after the status flips can land in that gap and come back empty.
+    runs = wait_runs(svc, 1)
     assert runs[0]["job"] == "daily_job" and runs[0]["status"] == STATUS_SUCCEEDED
     json.dumps(status)
     json.dumps(runs)  # сериализуемость

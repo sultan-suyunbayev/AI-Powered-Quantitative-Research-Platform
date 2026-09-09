@@ -233,7 +233,10 @@ class TestStateAdversarialPPO:
         # Mock model outputs
         dist_mock = MagicMock()
         dist_mock.log_prob.return_value = torch.randn(8)
-        dist_mock.entropy.return_value = torch.randn(8) + 1.0  # Positive entropy
+        # A fixed positive entropy. `torch.randn(8) + 1.0` was labelled the same
+        # way, but the mean of eight such draws has a standard error of ~0.354
+        # and dips below zero about one run in twelve.
+        dist_mock.entropy.return_value = torch.full((8,), 1.5)
         mock_model.policy.get_distribution.return_value = dist_mock
         mock_model.policy.predict_values.return_value = torch.randn(8)
 

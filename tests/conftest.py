@@ -455,6 +455,45 @@ except Exception:  # pragma: no cover - feature_config is always importable in-t
     _feature_config = None
 
 
+# ---------------------------------------------------------------------------
+# Deterministic randomness
+# ---------------------------------------------------------------------------
+# Unseeded draws made the suite fail differently on every run: three CI runs in
+# a row failed on three different tests, each asserting something about a random
+# value that the distribution crosses some fraction of the time. Seeding before
+# every test makes a pass mean the code passed, not that the draw was kind.
+#
+# Only generators that are already imported are seeded -- a test that never
+# touches torch should not pay to import it. A test that wants its own seed sets
+# it inside the test body and wins, because this runs first.
+
+_TEST_SEED = 20260908
+
+
+@pytest.fixture(autouse=True)
+def _deterministic_randomness():
+    """Put every imported random generator in a known state before each test."""
+    import random as _random
+
+    _random.seed(_TEST_SEED)
+
+    _numpy = sys.modules.get("numpy")
+    if _numpy is not None:
+        try:
+            _numpy.random.seed(_TEST_SEED)
+        except Exception:  # pragma: no cover - a stubbed numpy, seen in this suite
+            pass
+
+    _torch = sys.modules.get("torch")
+    if _torch is not None:
+        try:
+            _torch.manual_seed(_TEST_SEED)
+        except Exception:  # pragma: no cover - a stubbed torch, seen in this suite
+            pass
+
+    yield
+
+
 def _reset_feature_layout() -> None:
     if _feature_config is None:
         return
