@@ -26,6 +26,8 @@ Related: docs/testing/TESTING_POLICY.md
 
 from __future__ import annotations
 
+import ipaddress
+import socket as _socket
 import sys
 import types
 import urllib.parse
@@ -222,6 +224,10 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "requires_gymnasium: mark test as requiring gymnasium")
     config.addinivalue_line("markers", "requires_sb3: mark test as requiring stable-baselines3")
     config.addinivalue_line("markers", "requires_pyarrow: mark test as requiring pyarrow")
+    config.addinivalue_line(
+        "markers",
+        "allow_network: let this test open sockets to the outside world",
+    )
 
 
 # =============================================================================
@@ -519,3 +525,139 @@ def _restore_feature_layout():
     _reset_feature_layout()
     yield
     _reset_feature_layout()
+
+
+# =============================================================================
+# The suite does not talk to the internet
+# =============================================================================
+#
+# The ``requests`` stub above covers the HTTP libraries, but it is not the only
+# way out: the daemon's clock sync sends an NTP packet over a raw UDP socket,
+# and any client is free to use a library the stub has never heard of. So the
+# block sits at the socket layer instead. Anything aimed outside loopback --
+# connect, sendto, or even the name lookup -- raises and says which call it was.
+#
+# Loopback stays open. Local servers, ``socketpair()`` and in-process ASGI
+# transports are how a good part of this suite is written, and none of them
+# leave the machine. A test that genuinely has to go out can say so with
+# ``@pytest.mark.allow_network``; nothing in the suite does today.
+
+_NETWORK_ALLOWED = False
+
+_LOCAL_HOSTNAMES = frozenset({"", "localhost", "localhost.localdomain", "ip6-localhost"})
+
+_real_socket_connect = _socket.socket.connect
+_real_socket_connect_ex = _socket.socket.connect_ex
+_real_socket_sendto = _socket.socket.sendto
+_real_create_connection = _socket.create_connection
+_real_getaddrinfo = _socket.getaddrinfo
+
+
+def _is_local_address(address) -> bool:
+    """Whether an address stays on this machine.
+
+    AF_UNIX paths and anything that is not a (host, port) pair are local by
+    construction. A hostname that is not one of the loopback spellings is not:
+    resolving it is itself a trip to a DNS server.
+    """
+    if isinstance(address, (str, bytes, bytearray)):
+        return True  # AF_UNIX socket path
+    if not isinstance(address, tuple) or not address:
+        return True
+    host = address[0]
+    if host is None:
+        return True
+    host = str(host)
+    if host.lower() in _LOCAL_HOSTNAMES:
+        return True
+    try:
+        parsed = ipaddress.ip_address(host.split("%", 1)[0])
+    except ValueError:
+        return False
+    return parsed.is_loopback or parsed.is_unspecified
+
+
+def _check_address(address, call: str) -> None:
+    if _NETWORK_ALLOWED or _is_local_address(address):
+        return
+    raise RuntimeError(
+        f"This test suite does not use the network: blocked {call}({address!r}). "
+        "Stub the call out, or mark the test with @pytest.mark.allow_network if "
+        "it genuinely has to leave the machine."
+    )
+
+
+def _guarded_connect(self, address):
+    _check_address(address, "socket.connect")
+    return _real_socket_connect(self, address)
+
+
+def _guarded_connect_ex(self, address):
+    _check_address(address, "socket.connect_ex")
+    return _real_socket_connect_ex(self, address)
+
+
+def _guarded_sendto(self, data, *args):
+    # sendto(data, address) and sendto(data, flags, address) -- the address is
+    # the last argument either way. UDP needs no connect, which is how the NTP
+    # client leaves the machine without touching any of the calls above.
+    _check_address(args[-1] if args else None, "socket.sendto")
+    return _real_socket_sendto(self, data, *args)
+
+
+def _guarded_create_connection(address, *args, **kwargs):
+    _check_address(address, "socket.create_connection")
+    return _real_create_connection(address, *args, **kwargs)
+
+
+def _guarded_getaddrinfo(host, port, *args, **kwargs):
+    _check_address((host, port), "socket.getaddrinfo")
+    return _real_getaddrinfo(host, port, *args, **kwargs)
+
+
+_socket.socket.connect = _guarded_connect
+_socket.socket.connect_ex = _guarded_connect_ex
+_socket.socket.sendto = _guarded_sendto
+_socket.create_connection = _guarded_create_connection
+_socket.getaddrinfo = _guarded_getaddrinfo
+
+
+@pytest.fixture(autouse=True)
+def _network_is_off(request):
+    """Open the guard only for a test that asked for it by name."""
+    global _NETWORK_ALLOWED
+    previous = _NETWORK_ALLOWED
+    _NETWORK_ALLOWED = request.node.get_closest_marker("allow_network") is not None
+    try:
+        yield
+    finally:
+        _NETWORK_ALLOWED = previous
+
+
+@pytest.fixture(autouse=True)
+def _no_binance_filters_refresh(monkeypatch):
+    """Keep the filters refresh from spawning a fetcher and writing to the tree.
+
+    ``QuantizerImpl.__init__`` with ``refresh_on_start`` runs
+    ``python -m scripts.fetch_binance_filters`` in a child interpreter, which
+    talks to the live Binance REST API and lands ``data/binance_filters.json``
+    wherever it succeeds -- inside the checkout, during a test run. A child
+    process is outside any in-process socket guard, so the refresh is stubbed
+    here. Its return shape is (executed, succeeded, returncode, message), and
+    "not executed" is a state the caller already handles.
+    """
+    try:
+        from impl_quantizer import QuantizerImpl
+    except Exception:  # pragma: no cover - the module has optional dependencies
+        yield
+        return
+
+    monkeypatch.setattr(
+        QuantizerImpl,
+        "_refresh_filters",
+        classmethod(
+            lambda cls, out_path: (False, False, None, "Refresh disabled in the test suite")
+        ),
+        raising=True,
+    )
+    yield
