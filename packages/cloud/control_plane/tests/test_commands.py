@@ -18,6 +18,7 @@ from ..models import (
     ChangeClass,
     Command,
     CommandStatus,
+    ConfigBlob,
     Deployment,
     DeploymentState,
     Run,
@@ -53,6 +54,36 @@ async def enrolled_agent(
     await db_session.commit()
     await db_session.refresh(agent)
     return agent
+
+
+@pytest.fixture
+async def command_payload_blob(
+    db_session: AsyncSession,
+    sample_workspace: Workspace,
+) -> ConfigBlob:
+    """A payload blob a command is allowed to point at.
+
+    config_type "command_payload" is the type Design Doc 12.2 names for this;
+    the router accepts it along with the plain config types.
+    """
+    import hashlib
+    import json
+
+    content = {"command": "payload", "nonce": str(uuid4())}
+    content_str = json.dumps(content, sort_keys=True, separators=(",", ":"))
+
+    blob = ConfigBlob(
+        workspace_id=sample_workspace.id,
+        digest=f"sha256:{hashlib.sha256(content_str.encode()).hexdigest()}",
+        content=content,
+        size_bytes=len(content_str.encode()),
+        config_type="command_payload",
+        schema_version="1.0.0",
+    )
+    db_session.add(blob)
+    await db_session.commit()
+    await db_session.refresh(blob)
+    return blob
 
 
 @pytest.fixture
@@ -407,12 +438,20 @@ class TestListCommands:
 class TestCreateCommand:
     """Tests for POST /commands endpoint."""
 
+    # POST /commands validates payload_ref against a ConfigBlob in the same
+    # workspace (Design Doc 12.2): a command may only reference a payload the
+    # cloud already holds, since the agent resolves that digest through
+    # /agent/blobs when it runs the command. A digest with no blob behind it is
+    # a command whose payload does not exist, and the router answers 400. Every
+    # test below that expects the command to be accepted needs a real one.
+
     async def test_create_command_success(
         self,
         client: AsyncClient,
         superuser_headers: dict,
         enrolled_agent: Agent,
         workspace_id,
+        command_payload_blob: ConfigBlob,
     ) -> None:
         """Superuser can create a command."""
         response = await client.post(
@@ -421,7 +460,7 @@ class TestCreateCommand:
             json={
                 "agent_id": str(enrolled_agent.id),
                 "command_type": "REQUEST_START_RUN",
-                "payload_ref": "sha256:" + "x" * 64,
+                "payload_ref": command_payload_blob.digest,
                 "change_class": "trading_impacting",
             },
         )
@@ -439,6 +478,7 @@ class TestCreateCommand:
         superuser_headers: dict,
         enrolled_agent: Agent,
         workspace_id,
+        command_payload_blob: ConfigBlob,
     ) -> None:
         """Create command with custom idempotency key."""
         idem_key = "custom-idem-key-123"
@@ -448,7 +488,7 @@ class TestCreateCommand:
             json={
                 "agent_id": str(enrolled_agent.id),
                 "command_type": "REQUEST_STOP_RUN",
-                "payload_ref": "sha256:" + "y" * 64,
+                "payload_ref": command_payload_blob.digest,
             },
         )
 
@@ -462,6 +502,7 @@ class TestCreateCommand:
         superuser_headers: dict,
         sample_command: Command,
         enrolled_agent: Agent,
+        command_payload_blob: ConfigBlob,
         workspace_id,
     ) -> None:
         """Cannot create command with duplicate idempotency key."""
@@ -471,7 +512,7 @@ class TestCreateCommand:
             json={
                 "agent_id": str(enrolled_agent.id),
                 "command_type": "REQUEST_STOP_RUN",
-                "payload_ref": "sha256:" + "z" * 64,
+                "payload_ref": command_payload_blob.digest,
             },
         )
 
@@ -526,6 +567,7 @@ class TestCreateCommand:
         enrolled_agent: Agent,
         sample_deployment: Deployment,
         workspace_id,
+        command_payload_blob: ConfigBlob,
     ) -> None:
         """Create command with deployment reference."""
         response = await client.post(
@@ -535,7 +577,7 @@ class TestCreateCommand:
                 "agent_id": str(enrolled_agent.id),
                 "deployment_id": str(sample_deployment.id),
                 "command_type": "REQUEST_UPDATE_CONFIG",
-                "payload_ref": "sha256:" + "d" * 64,
+                "payload_ref": command_payload_blob.digest,
                 "change_class": "trading_impacting",
             },
         )
@@ -551,6 +593,7 @@ class TestCreateCommand:
         enrolled_agent: Agent,
         sample_run: Run,
         workspace_id,
+        command_payload_blob: ConfigBlob,
     ) -> None:
         """Create command with run reference."""
         response = await client.post(
@@ -560,7 +603,7 @@ class TestCreateCommand:
                 "agent_id": str(enrolled_agent.id),
                 "run_id": str(sample_run.id),
                 "command_type": "REQUEST_PAUSE_RUN",
-                "payload_ref": "sha256:" + "r" * 64,
+                "payload_ref": command_payload_blob.digest,
             },
         )
 
@@ -574,6 +617,7 @@ class TestCreateCommand:
         superuser_headers: dict,
         enrolled_agent: Agent,
         sample_workspace: Workspace,
+        command_payload_blob: ConfigBlob,
     ) -> None:
         """Create command that requires approval."""
         response = await client.post(
@@ -582,7 +626,7 @@ class TestCreateCommand:
             json={
                 "agent_id": str(enrolled_agent.id),
                 "command_type": "REQUEST_ROTATE_AGENT_SESSION",
-                "payload_ref": "sha256:" + "a" * 64,
+                "payload_ref": command_payload_blob.digest,
                 "change_class": "security_sensitive",
                 "requires_approval": True,
             },
