@@ -22,7 +22,7 @@
 # Build System (install first for Cython extensions)
 # -----------------------------------------------------------------------------
 setuptools==69.0.3
-wheel==0.42.0
+wheel==0.46.2
 Cython==3.0.10
 
 # -----------------------------------------------------------------------------
@@ -52,7 +52,7 @@ statsmodels==0.14.4
 # -----------------------------------------------------------------------------
 aiohttp==3.10.10
 websockets==13.1
-requests==2.32.3
+requests==2.33.0
 httpx==0.28.1
 
 # -----------------------------------------------------------------------------
@@ -88,12 +88,12 @@ typing_extensions==4.12.2
 # HTTP
 certifi==2024.8.30
 charset-normalizer==3.4.0
-idna==3.10
-urllib3==2.2.3
+idna==3.15
+urllib3==2.7.0
 sniffio==1.3.1
 anyio==4.6.2.post1
-h11==0.14.0
-httpcore==1.0.7
+h11==0.16.0
+httpcore==1.0.9
 
 # aiohttp
 aiosignal==1.3.1
@@ -106,9 +106,9 @@ yarl==1.18.0
 async-timeout==4.0.3
 
 # PyTorch
-filelock==3.16.1
+filelock==3.20.3
 fsspec==2024.10.0
-jinja2==3.1.4
+jinja2==3.1.6
 MarkupSafe==3.0.2
 mpmath==1.3.0
 networkx==3.4.2
@@ -131,7 +131,7 @@ tqdm==4.67.0
 # Scientific
 contourpy==1.3.1
 cycler==0.12.1
-fonttools==4.55.0
+fonttools==4.60.2
 kiwisolver==1.4.7
 packaging==24.2
 pillow==11.0.0
@@ -143,8 +143,7 @@ threadpoolctl==3.5.0
 
 # Utilities
 greenlet==3.1.1
-Mako==1.3.6
-
+Mako==1.3.12
 # -----------------------------------------------------------------------------
 # CCEA Agent Dependencies (WI-DEPS-01)
 # Reference: packages/agent/vault/local_vault.py, ccea/crypto/keys.py
@@ -163,8 +162,7 @@ pycparser==2.22
 asyncpg==0.29.0
 
 # JWT token handling (RFC 7519 compliant)
-PyJWT==2.9.0
-
+PyJWT==2.13.0
 # Password hashing - Argon2id (OWASP recommended, NIST SP 800-63B)
 argon2-cffi==23.1.0
 argon2-cffi-bindings==21.2.0
