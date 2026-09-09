@@ -66,8 +66,11 @@ def test_categorical_variance_from_old_probs():
     # Atoms (fixed support points)
     atoms = torch.linspace(-10.0, 10.0, n_atoms)
 
-    # Old probabilities (from rollout buffer) - what we should use
-    # Create non-uniform distribution
+    # Old probabilities (from rollout buffer) - what we should use.
+    # Seeded: the assertion below is that a weighted variance differs from an
+    # unweighted one by more than 10%, and an unseeded softmax over 51 atoms
+    # can come out flat enough to sit inside that band.
+    torch.manual_seed(0)
     old_logits = torch.randn(batch_size, n_atoms)
     old_probs = torch.softmax(old_logits, dim=1)
 
