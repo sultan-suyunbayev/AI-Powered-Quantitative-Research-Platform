@@ -199,10 +199,14 @@ class TestRetrySyncDecorator:
 
         func()
 
-        # Should have waited between attempts
-        if len(timings) >= 2:
-            time_diff = timings[1] - timings[0]
-            assert time_diff >= 0.01  # Some backoff should occur
+        # compute_backoff is full jitter -- rng.random() * exp -- so a single
+        # wait has no lower bound: with backoff_base_s=0.05 it lands anywhere in
+        # [0, 50) ms. What holds for every draw is that the call was retried and
+        # that the wait stayed under the configured ceiling.
+        assert counter["calls"] == 2
+        assert len(timings) == 2
+        time_diff = timings[1] - timings[0]
+        assert 0.0 <= time_diff <= cfg.max_backoff_s + 0.5
 
     def test_retry_sync_zero_max_attempts(self):
         """Test with zero max_attempts defaults to 1."""
