@@ -100,6 +100,13 @@ def _base_state(price_scale: int) -> EnvState:
 
 
 def test_simulator_flip_keeps_cash_and_equity_consistent() -> None:
+    # The step shuffles its event queue and picks the agent's limit-order and
+    # stop-loss price offsets with libc rand(), a process-global sequence that
+    # nothing seeds, so the same scenario need not repeat. That was not what
+    # made this test fail -- see the closing price below -- but the expectations
+    # here are written for one particular sequence, so it is pinned.
+    lob_state.seed_step_logic(20260909)
+
     price_scale = 100
     workspace = SimulationWorkspace(8)
     generator = CyMicrostructureGenerator()
@@ -172,7 +179,17 @@ def test_simulator_flip_keeps_cash_and_equity_consistent() -> None:
     cash_expected = cash_before + trade_cash - fee_paid
     realized_expected = realized_before + units_before * (current_price - entry_price)
 
-    final_mid = (lob.get_best_bid() + lob.get_best_ask()) / (2.0 * price_scale)
+    # run_full_step_logic_cython prices the closing position at the mid only
+    # while both sides of the book are there, and falls back to the bar price
+    # otherwise. Taking the first branch unconditionally makes the expectation a
+    # different quantity from the one the step computed the moment the flip
+    # consumes a whole side -- (0 + best_ask) / 2 is half the real price.
+    best_bid = lob.get_best_bid()
+    best_ask = lob.get_best_ask()
+    if best_bid > 0 and best_ask > 0:
+        final_mid = (best_bid + best_ask) / (2.0 * price_scale)
+    else:
+        final_mid = current_price
     final_units = units_before - trade_volume
     net_worth_expected = cash_expected + final_units * final_mid
     step_pnl_expected = net_worth_expected - prev_net_worth

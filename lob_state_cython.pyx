@@ -5,7 +5,7 @@ from array_specializations cimport ArrayDouble4, ArrayDouble168
 
 from cython cimport Py_ssize_t
 from libc.stddef cimport size_t
-from libc.stdlib cimport rand
+from libc.stdlib cimport rand, srand
 from libc.math cimport log, tanh, fmax, fmin, log1p, fabs, isnan
 from libc.stdint cimport uint64_t
 
@@ -25,6 +25,21 @@ np.import_array()
 # вычисляем число признаков для observation_space
 # создаём временный буфер достаточной длины
 cdef public int N_FEATURES
+def seed_step_logic(unsigned int seed):
+    """Pin the random draws inside ``run_full_step_logic_cython``.
+
+    The step shuffles its event queue and picks the agent's limit-order and
+    stop-loss price offsets with libc ``rand()``. That is a process-global
+    sequence, so without this the same scenario run twice need not agree: the
+    prices depend on how many random numbers everything else in the process
+    consumed first. A backtest that cannot be repeated is not a backtest.
+
+    Deliberately not called at import: seeding on import would reset a seed the
+    caller had already set.
+    """
+    srand(seed)
+
+
 @cython.cfunc
 cdef void _shuffle_events(vector[MicroEvent]& events, vector[unsigned char]& sources):
     cdef size_t n = events.size()
