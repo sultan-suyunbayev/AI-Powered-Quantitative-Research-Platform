@@ -1034,18 +1034,6 @@ def test_train_nan_log_ratio_branch():
     model.train()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "SA-PPO's sample_mask is per sample ([batch_size], as its docstring says), "
-        "and train() then applies it to the recurrent state's sequence axis: "
-        "tuple(s[:, ~adv_mask] for s in actor_states). Those two axes match only "
-        "when a minibatch holds exactly one timestep per sequence, so SA-PPO with "
-        "a recurrent policy raises IndexError. Mapping a per-sample mask onto "
-        "per-sequence states is a design decision, not a lost line of code. "
-        "See docs/AUDIT_2026-09.md, 'Still open'."
-    ),
-)
 def test_train_sa_ppo_and_weighted_entropy():
     env = make_vec_env(max_steps=4)
     model = make_model(env=env)
@@ -1063,7 +1051,13 @@ def test_train_sa_ppo_and_weighted_entropy():
             mask[0] = 1.0
             return states, mask, {"debug/sa_ppo_enabled": 1.0}
 
-        def compute_robust_kl_penalty(self, states_clean, states_adv, actions):
+        def compute_robust_kl_penalty(self, states_clean, states_adv, actions, **kwargs):
+            # The trainer passes the recurrent state and the sample mask by
+            # keyword, as the real wrapper declares them.
+            assert states_clean.shape == states_adv.shape, (
+                "the robust KL is between a state and its own perturbation, so "
+                "the two sides have to be the same rows"
+            )
             return 0.1, {"debug/sa_ppo_robust_kl": 0.1}
 
     model.set_sa_ppo_wrapper(_SaPpoStub())

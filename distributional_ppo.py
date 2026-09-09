@@ -10578,61 +10578,57 @@ class DistributionalPPO(RecurrentPPO):
 
                     # SA-PPO: Add robust KL regularization if enabled
                     if sa_ppo_enabled and sa_ppo_sample_mask is not None:
-                        # Extract adversarial samples for robust KL computation
                         adv_mask = sa_ppo_sample_mask > 0.5
                         if torch.any(adv_mask):
-                            # Split observations into clean and adversarial
-                            obs_clean = (
-                                rollout_data.observations[~adv_mask]
-                                if torch.any(~adv_mask)
-                                else None
+                            # The robust KL is KL(pi(.|s) || pi(.|s+delta)): the
+                            # same state, one copy of it perturbed. So both sides
+                            # get the whole minibatch -- the untouched
+                            # observations and the augmented ones -- and the mask
+                            # picks the perturbed rows out of the per-sample KL.
+                            # Splitting the batch first gave two different samples
+                            # of different sizes, whose KL is not a divergence
+                            # between a state and its perturbation; and the
+                            # recurrent state cannot be split at all, since its
+                            # second axis counts sequences rather than samples.
+                            actor_states = self._extract_actor_states(rollout_data.lstm_states)
+                            kl_kwargs = {
+                                "states_clean": rollout_data.observations,
+                                "states_adv": observations_for_training,
+                                "actions": rollout_data.actions,
+                                "lstm_states_clean": actor_states,
+                                "lstm_states_adv": actor_states,
+                                "episode_starts_clean": rollout_data.episode_starts,
+                                "episode_starts_adv": rollout_data.episode_starts,
+                                "sample_mask": sa_ppo_sample_mask,
+                            }
+
+                            # Prefer the tensor form. A float penalty carries no
+                            # gradient: adding it shifts the reported loss and
+                            # leaves the update exactly as it was, so the
+                            # regulariser would not regularise. Wrappers that
+                            # only offer the float method still work.
+                            kl_tensor_fn = getattr(
+                                sa_ppo_wrapper, "compute_robust_kl_penalty_tensor", None
                             )
-                            obs_adv = observations_for_training[adv_mask]
-                            actions_for_kl = rollout_data.actions[adv_mask]
-
-                            # Compute robust KL penalty
-                            if obs_clean is not None and obs_clean.size(0) > 0:
-                                # Extract clean and adversarial actor LSTM states and episode starts (prevents crash)
-                                actor_states = self._extract_actor_states(rollout_data.lstm_states)
-                                lstm_states_clean = (
-                                    tuple(s[:, ~adv_mask] for s in actor_states)
-                                    if actor_states is not None
-                                    else None
+                            if callable(kl_tensor_fn):
+                                robust_kl_tensor, robust_kl_info = kl_tensor_fn(**kl_kwargs)
+                                robust_kl_tensor = robust_kl_tensor.to(
+                                    device=policy_loss.device, dtype=policy_loss.dtype
                                 )
-                                lstm_states_adv = (
-                                    tuple(s[:, adv_mask] for s in actor_states)
-                                    if actor_states is not None
-                                    else None
-                                )
-                                episode_starts_clean = (
-                                    rollout_data.episode_starts[~adv_mask]
-                                    if rollout_data.episode_starts is not None
-                                    else None
-                                )
-                                episode_starts_adv = (
-                                    rollout_data.episode_starts[adv_mask]
-                                    if rollout_data.episode_starts is not None
-                                    else None
-                                )
-
+                            else:
                                 robust_kl_value, robust_kl_info = (
-                                    sa_ppo_wrapper.compute_robust_kl_penalty(
-                                        states_clean=obs_clean,
-                                        states_adv=obs_adv,
-                                        actions=actions_for_kl,
-                                        lstm_states_clean=lstm_states_clean,
-                                        lstm_states_adv=lstm_states_adv,
-                                        episode_starts_clean=episode_starts_clean,
-                                        episode_starts_adv=episode_starts_adv,
-                                    )
+                                    sa_ppo_wrapper.compute_robust_kl_penalty(**kl_kwargs)
                                 )
-                                # Add to policy loss as tensor
                                 robust_kl_tensor = policy_loss.new_tensor(robust_kl_value)
-                                policy_loss = policy_loss + robust_kl_tensor
 
-                                # Log robust KL statistics
-                                for key, value in robust_kl_info.items():
-                                    self.logger.record(key, float(value))
+                            policy_loss = policy_loss + robust_kl_tensor
+
+                            # Log robust KL statistics. kl_method is a string --
+                            # float() raises on it.
+                            for key, value in robust_kl_info.items():
+                                self.logger.record(
+                                    key, value if isinstance(value, str) else float(value)
+                                )
 
                     inner_dist = getattr(dist, "distribution", None)
                     if entropy_tensor is None:
