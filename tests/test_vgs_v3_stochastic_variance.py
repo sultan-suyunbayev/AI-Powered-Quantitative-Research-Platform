@@ -63,19 +63,6 @@ class TestStochasticVarianceCorrectness:
 
         print(f"[PASS] Uniform noisy gradients correctly show variance = {variance:.6f} > 0")
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "VGS v3.1 reduces each parameter to a spatial mean and a spatial "
-            "mean-of-squares before taking the EMA, so Var = E[g^2] - E[g]^2 is "
-            "the SPATIAL variance whenever the gradient is constant over time. "
-            "VGS is meant to measure stochastic (temporal) noise. Keeping the two "
-            "EMAs elementwise and reducing afterwards would give zero here and "
-            "the true temporal variance otherwise, but that changes the state_dict "
-            "format, so it is recorded in docs/AUDIT_2026-09.md rather than "
-            "changed under a checkpoint-compatibility guarantee."
-        ),
-    )
     def test_heterogeneous_constant_gradients_zero_variance(self):
         """
         CRITICAL TEST: Heterogeneous but constant gradients should have ZERO variance.
@@ -335,9 +322,10 @@ class TestCheckpointMigration:
     def test_current_checkpoint_loads_without_warning(self):
         """A checkpoint written by this version loads silently.
 
-        The migration warning fires for anything before 3.1, which is where the
-        E[g**2] computation changed; 3.2 only adds min_scaling_factor and
-        variance_cap, so the two share a statistics format.
+        The migration warning fires for anything this build did not write:
+        before 3.1 the E[g**2] computation was different, and 3.1/3.2 carry no
+        elementwise first moment, so 4.0 has to reconstruct it. A checkpoint
+        written by this build round-trips silently.
         """
         param = nn.Parameter(torch.randn(100))
 
@@ -347,7 +335,7 @@ class TestCheckpointMigration:
             vgs1.step()
 
         state1 = vgs1.state_dict()
-        assert state1["vgs_version"] in ("3.1", "3.2")
+        assert state1["vgs_version"] in ("3.1", "3.2", "4.0")
 
         # Load into new VGS
         vgs2 = VarianceGradientScaler([param], warmup_steps=10)

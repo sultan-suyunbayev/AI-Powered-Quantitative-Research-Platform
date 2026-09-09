@@ -199,8 +199,8 @@ class TestVGSVersionMigration:
         assert vgs._param_grad_mean_ema is None
         assert vgs._param_grad_sq_ema is None
 
-    def test_v31_loads_without_warning(self):
-        """Verify v3.1 checkpoints load cleanly."""
+    def test_v31_loads_with_a_migration_warning(self):
+        """A v3.1 checkpoint still loads; 4.0 reconstructs what it cannot carry."""
         model = torch.nn.Linear(10, 5)
         vgs = VarianceGradientScaler(model.parameters(), enabled=True)
 
@@ -218,15 +218,18 @@ class TestVGSVersionMigration:
             "vgs_version": "3.1",
         }
 
-        # Should load without warning
+        # 4.0 keeps the first moment per element; a 3.1 checkpoint has only the
+        # spatial mean, so the load reconstructs it and says so.
         import warnings
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")  # Treat warnings as errors
-            try:
-                vgs.load_state_dict(v31_state)
-            except UserWarning:
-                pytest.fail("v3.1 checkpoint should not trigger warning")
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            vgs.load_state_dict(v31_state)
+
+        migration = [x for x in w if "4.0" in str(x.message)]
+        assert len(migration) == 1, "v3.1 -> v4.0 should report the reconstruction"
+        assert vgs._param_grad_mean_ema is not None
+        assert vgs._param_grad_mean_elem_ema is not None
 
 
 class TestUPGDSigmoidScaling:
