@@ -556,6 +556,8 @@ _real_socket_connect_ex = _socket.socket.connect_ex
 _real_socket_sendto = _socket.socket.sendto
 _real_create_connection = _socket.create_connection
 _real_getaddrinfo = _socket.getaddrinfo
+_real_gethostbyname = _socket.gethostbyname
+_real_gethostbyname_ex = _socket.gethostbyname_ex
 
 
 def _is_local_address(address) -> bool:
@@ -620,11 +622,26 @@ def _guarded_getaddrinfo(host, port, *args, **kwargs):
     return _real_getaddrinfo(host, port, *args, **kwargs)
 
 
+def _guarded_gethostbyname(hostname):
+    # A bare hostname rather than an address pair. Resolving it is a round trip
+    # to a DNS server, which is the thing being blocked, so it is checked the
+    # same way -- the port half of the pair is not used.
+    _check_address((hostname, None), "socket.gethostbyname")
+    return _real_gethostbyname(hostname)
+
+
+def _guarded_gethostbyname_ex(hostname):
+    _check_address((hostname, None), "socket.gethostbyname_ex")
+    return _real_gethostbyname_ex(hostname)
+
+
 _socket.socket.connect = _guarded_connect
 _socket.socket.connect_ex = _guarded_connect_ex
 _socket.socket.sendto = _guarded_sendto
 _socket.create_connection = _guarded_create_connection
 _socket.getaddrinfo = _guarded_getaddrinfo
+_socket.gethostbyname = _guarded_gethostbyname
+_socket.gethostbyname_ex = _guarded_gethostbyname_ex
 
 
 @pytest.fixture(autouse=True)

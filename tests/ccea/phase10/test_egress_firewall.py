@@ -5,9 +5,12 @@ Tests for EgressFirewall.
 CCEA Phase 10: Network egress control.
 """
 
+import socket
+
 import pytest
 from datetime import datetime, timedelta
 
+from packages.cloud.research.sandbox import egress_firewall as _egress_firewall
 from packages.cloud.research.sandbox.egress_firewall import (
     EgressFirewall,
     EgressRule,
@@ -21,6 +24,35 @@ from packages.cloud.research.sandbox.egress_firewall import (
     BLOCKED_PORTS,
     BLOCKED_METADATA_IPS,
 )
+
+
+# Hostnames these tests use, and what the firewall should see them resolve to.
+# A public address for the ones that are meant to be reachable, and gaierror for
+# the rest -- which is the branch _resolve_destination already handles by
+# returning None.
+_STUB_DNS = {
+    "api.github.com": "140.82.121.5",
+    "github.com": "140.82.121.4",
+    "external.host": "93.184.216.34",
+}
+
+
+@pytest.fixture(autouse=True)
+def _no_live_dns(monkeypatch):
+    """Resolve the test hostnames locally.
+
+    EgressFirewall._resolve_destination calls socket.gethostbyname, so without
+    this the file asks a DNS server whether a third party's record still exists
+    -- in tests about allowlist matching, port blocking and rate limiting.
+    """
+
+    def _gethostbyname(hostname):
+        try:
+            return _STUB_DNS[hostname]
+        except KeyError:
+            raise socket.gaierror(f"stubbed DNS has no record for {hostname!r}")
+
+    monkeypatch.setattr(_egress_firewall.socket, "gethostbyname", _gethostbyname)
 
 
 class TestEgressRule:
